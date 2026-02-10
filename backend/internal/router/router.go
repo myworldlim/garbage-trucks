@@ -1,6 +1,7 @@
 package router
 
 import (
+	"net/http"
 	"github.com/gorilla/mux"
 	"garbage_trucks/backend/internal/handlers"
 	"garbage_trucks/backend/internal/middleware"
@@ -13,7 +14,7 @@ func NewRouter() *mux.Router {
 	r.Use(middleware.CORS)
 
 	// API Routes
-	// Health check (важно для Fly.io health checks!)
+	// Health check
 	r.HandleFunc("/api/health", handlers.HealthHandler).Methods("GET")
 	
 	// Drivers
@@ -30,10 +31,13 @@ func NewRouter() *mux.Router {
 	
 	// Routes
 	r.HandleFunc("/api/routes", handlers.GetRoutesHandler).Methods("GET")
-	r.HandleFunc("/api/routes/status", handlers.UpdateRouteStatusHandler).Methods("POST", "PATCH") // Добавил PATCH
+	r.HandleFunc("/api/routes/status", handlers.UpdateRouteStatusHandler).Methods("POST", "PATCH")
 	
-	// OPTIONS методы добавляются автоматически через CORS middleware
-	// Не нужно явно указывать "OPTIONS" в Methods()
+	// ВАЖНО: Явно обрабатываем OPTIONS для всех маршрутов
+	r.Methods("OPTIONS").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Пустой обработчик, CORS middleware добавит заголовки
+		w.WriteHeader(http.StatusOK)
+	})
 
 	return r
 }
