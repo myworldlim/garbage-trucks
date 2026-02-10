@@ -49,7 +49,7 @@ export default function DriverPage() {
           routeCount={data?.routes?.length || 0}
         />
 
-        <Map mapId="map" />
+        <Map />
 
         {/* Routes list button */}
         <button
