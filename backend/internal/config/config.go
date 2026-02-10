@@ -38,7 +38,7 @@ func Load() *Config {
 				dbUser = credsHost[0]
 				dbPassword = credsHost[1]
 			}
-			
+
 			hostDB := strings.Split(parts[1], "/")
 			if len(hostDB) == 2 {
 				hostPort := strings.Split(hostDB[0], ":")
@@ -60,8 +60,8 @@ func Load() *Config {
 
 	return &Config{
 		DBUser:      getEnvWithFallback("DB_USER", dbUser, "postgres"),
-		DBPassword:  getEnvWithFallback("DB_PASSWORD", dbPassword, ""),
-		DBHost:      getEnvWithFallback("DB_HOST", dbHost, "localhost"),
+		DBPassword:  getEnvWithFallback("DB_PASSWORD", dbPassword, "toor"),
+		DBHost:      getEnvWithFallback("DB_HOST", dbHost, "127.0.0.1"),
 		DBPort:      getEnvWithFallback("DB_PORT", dbPort, "5432"),
 		DBName:      getEnvWithFallback("DB_NAME", dbName, "garbage_trucks"),
 		Port:        ":" + getEnv("PORT", "8080"),

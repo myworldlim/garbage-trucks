@@ -3,9 +3,10 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"garbage_trucks/backend/internal/models"
+	"log"
 	"net/http"
 	"strconv"
-	"garbage_trucks/backend/internal/models"
 )
 
 func GetRoutesHandler(w http.ResponseWriter, r *http.Request) {
@@ -74,6 +75,8 @@ func UpdateRouteStatusHandler(w http.ResponseWriter, r *http.Request) {
 	routeIDStr := r.URL.Query().Get("route_id")
 	status := r.URL.Query().Get("status")
 
+	log.Printf("UpdateRouteStatusHandler: route_id=%s, status=%s", routeIDStr, status)
+
 	if routeIDStr == "" || status == "" {
 		http.Error(w, "route_id и status обязательны", http.StatusBadRequest)
 		return
@@ -87,6 +90,7 @@ func UpdateRouteStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = models.UpdateRouteStatus(context.Background(), routeID, status)
 	if err != nil {
+		log.Printf("UpdateRouteStatus error: %v", err)
 		http.Error(w, "Ошибка обновления статуса", http.StatusInternalServerError)
 		return
 	}
