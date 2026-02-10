@@ -2,9 +2,11 @@
 backend/.env
 
 # Frontend
-
+frontend/.next/
+frontend/node_modules/
 
 # Общее
 *.log
+*.tmp
 *.DS_Store
 Thumbs.db
