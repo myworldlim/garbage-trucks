@@ -1,0 +1,24 @@
+backend/
+├── cmd/
+│   └── server/
+│       └── main.go               # точка входа, запускает сервер
+├── internal/
+│   ├── config/
+│   │   └── config.go             # загрузка .env и структура конфигурации
+│   ├── database/
+│   │   └── db.go                 # подключение к PostgreSQL (pgxpool)
+│   ├── models/
+│   │   ├── driver.go             # модель и методы для водителей
+│   │   ├── collection_point.go   # модель точек сбора
+│   │   └── route.go              # модель маршрутов + методы
+│   ├── handlers/
+│   │   ├── health.go             # хендлер /api/health
+│   │   ├── drivers.go            # хендлеры для /api/drivers
+│   │   └── routes.go             # хендлеры для /api/routes и status
+│   ├── middleware/
+│   │   └── cors.go               # middleware для CORS
+│   └── router/
+│       └── router.go             # регистрация всех маршрутов (роутинг)
+├── .env                          # переменные окружения (не коммитить!)
+├── go.mod
+└── go.sum

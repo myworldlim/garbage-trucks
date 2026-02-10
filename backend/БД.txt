@@ -1,0 +1,175 @@
+-- Выходим из текущей базы (если вы в ней)
+\q
+
+-- Подключаемся к postgres (дефолтная база)
+psql -U postgres
+
+-- Удаляем старую базу (если она существует)
+DROP DATABASE IF EXISTS garbage_trucks;
+
+-- Создаём новую базу сразу с кодировкой UTF8 и правильной локалью
+CREATE DATABASE garbage_trucks
+    WITH 
+    OWNER = postgres
+    ENCODING = 'UTF8'
+    LC_COLLATE = 'ru_RU.UTF-8'
+    LC_CTYPE = 'ru_RU.UTF-8'
+    TEMPLATE = template0;
+
+-- Подключаемся к новой базе
+\c garbage_trucks
+
+
+
+
+Что делать, если русские буквы всё равно кривые в консоли
+Варианты (выбери один):
+Вариант А — быстро и просто
+Запускать psql с правильной кодовой страницей:
+chcp 65001
+psql -U postgres -d garbage_trucks
+
+
+
+
+
+
+-- Подключитесь к PostgreSQL и создайте/пересоздайте базу (если нужно)
+-- psql -U postgres
+DROP DATABASE IF EXISTS garbage_trucks;
+CREATE DATABASE garbage_trucks;
+\c garbage_trucks;
+
+-- Удаляем таблицы, если они существуют (для пересоздания)
+DROP TABLE IF EXISTS routes;
+DROP TABLE IF EXISTS collection_points;
+DROP TABLE IF EXISTS drivers;
+
+-- Создаём таблицу drivers
+CREATE TABLE drivers (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Создаём таблицу collection_points с FLOAT для координат
+CREATE TABLE collection_points (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    address VARCHAR(300),
+    latitude FLOAT NOT NULL,
+    longitude FLOAT NOT NULL,
+    city VARCHAR(100) DEFAULT 'Рязань'
+);
+
+-- Создаём таблицу routes с улучшениями:
+-- - scheduled_at вместо scheduled_time (TIMESTAMP для даты+времени)
+-- - Добавлен visited_at (когда реально посетили)
+-- - Добавлен comment (для заметок водителя)
+-- - updated_at для отслеживания изменений
+-- - Constraint на статус
+CREATE TABLE routes (
+    id SERIAL PRIMARY KEY,
+    driver_id INTEGER NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+    point_id INTEGER NOT NULL REFERENCES collection_points(id) ON DELETE CASCADE,
+    order_number INTEGER NOT NULL,
+    scheduled_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    visited_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    comment TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT valid_status CHECK (status IN ('pending', 'in_progress', 'completed', 'skipped', 'problem'))
+);
+
+-- Добавляем триггер для автоматического обновления updated_at
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_routes_updated_at
+BEFORE UPDATE ON routes
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at();
+
+-- Добавляем индексы для производительности
+CREATE INDEX idx_routes_driver_id ON routes(driver_id);
+CREATE INDEX idx_routes_status ON routes(status);
+CREATE INDEX idx_routes_point_id ON routes(point_id);
+
+-- Вставляем данные для drivers (10 водителей)
+INSERT INTO drivers (name) VALUES
+('Водитель 1'), ('Водитель 2'), ('Водитель 3'),
+('Водитель 4'), ('Водитель 5'), ('Водитель 6'),
+('Водитель 7'), ('Водитель 8'), ('Водитель 9'),
+('Водитель 10');
+
+-- Вставляем данные для collection_points (25 точек с реальными координатами Рязани)
+INSERT INTO collection_points (name, address, latitude, longitude) VALUES
+('Точка 1 - Центр', 'ул. Свободы, 1', 54.6269, 39.7464),
+('Точка 2 - Железнодорожный', 'ул. Почтовая, 10', 54.6150, 39.7300),
+('Точка 3 - Приокский', 'ул. Ленина, 25', 54.6400, 39.7600),
+('Точка 4 - Московский', 'Московское шоссе, 50', 54.6500, 39.7200),
+('Точка 5 - Советский', 'ул. Павлова, 15', 54.6300, 39.7800),
+('Точка 6', 'ул. Интернациональная, 30', 54.6200, 39.7500),
+('Точка 7', 'ул. Семинарская, 8', 54.6100, 39.7400),
+('Точка 8', 'ул. Радищева, 22', 54.6350, 39.7300),
+('Точка 9', 'ул. Куйбышева, 45', 54.6450, 39.7500),
+('Точка 10', 'ул. Гагарина, 12', 54.6180, 39.7650),
+('Точка 11', 'ул. Вокзальная, 5', 54.6050, 39.7250),
+('Точка 12', 'ул. Соборная, 18', 54.6280, 39.7380),
+('Точка 13', 'ул. Есенина, 7', 54.6320, 39.7700),
+('Точка 14', 'ул. Космонавтов, 33', 54.6400, 39.7100),
+('Точка 15', 'ул. Строителей, 28', 54.6150, 39.7550),
+('Точка 16', 'ул. Мичурина, 40', 54.6250, 39.7850),
+('Точка 17', 'ул. Новоселов, 14', 54.6500, 39.7400),
+('Точка 18', 'ул. Зубковой, 9', 54.6080, 39.7350),
+('Точка 19', 'ул. Дзержинского, 27', 54.6370, 39.7200),
+('Точка 20', 'ул. Пушкина, 31', 54.6220, 39.7600),
+('Точка 21', 'ул. Суворова, 16', 54.6130, 39.7450),
+('Точка 22', 'ул. Красноармейская, 23', 54.6420, 39.7300),
+('Точка 23', 'ул. Фрунзе, 38', 54.6190, 39.7750),
+('Точка 24', 'ул. Чехова, 11', 54.6330, 39.7150),
+('Точка 25', 'ул. Горького, 42', 54.6270, 39.7520);
+
+-- Вставляем маршруты для всех 10 водителей
+-- Для каждого водителя: все 25 точек в порядке id, с scheduled_at = сегодняшний день + 08:00 + 10 мин на точку
+DO $$
+DECLARE
+    driver RECORD;
+BEGIN
+    FOR driver IN SELECT id FROM drivers ORDER BY id LOOP
+        INSERT INTO routes (driver_id, point_id, order_number, scheduled_at, status)
+        SELECT
+            driver.id AS driver_id,
+            cp.id AS point_id,
+            ROW_NUMBER() OVER (ORDER BY cp.id) AS order_number,
+            (CURRENT_DATE + TIME '08:00:00' + (INTERVAL '10 minutes' * (ROW_NUMBER() OVER (ORDER BY cp.id) - 1))) AS scheduled_at,
+            'pending' AS status
+        FROM collection_points cp
+        ORDER BY cp.id;
+    END LOOP;
+END $$;
+
+-- Проверка данных
+SELECT 'Количество водителей:' AS description, COUNT(*) AS count FROM drivers;
+SELECT 'Количество точек:' AS description, COUNT(*) AS count FROM collection_points;
+SELECT 'Количество маршрутов:' AS description, COUNT(*) AS count FROM routes;
+
+-- Пример данных для водителя 1 (первые 5)
+SELECT 
+    r.order_number,
+    cp.name AS точка,
+    cp.address AS адрес,
+    r.scheduled_at AS запланировано,
+    r.status AS статус
+FROM routes r
+JOIN collection_points cp ON r.point_id = cp.id
+WHERE r.driver_id = 1
+ORDER BY r.order_number
+LIMIT 5;

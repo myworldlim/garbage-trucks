@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env
+Dockerfile
+README.md
+vendor/
+*.log
+tmp/
+__pycache__/
+node_modules/
+*.db
+*.sqlite3
