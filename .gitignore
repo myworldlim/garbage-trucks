@@ -1,0 +1,10 @@
+# Backend
+backend/.env
+
+# Frontend
+
+
+# Общее
+*.log
+*.DS_Store
+Thumbs.db
