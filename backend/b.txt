@@ -1,0 +1,1098 @@
+# Для разработки
+DB_USER=postgres
+# DB_PASSWORD=postgres
+DB_PASSWORD=toor
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=garbage_trucks
+PORT=8080
+FRONTEND_URL=http://localhost:3000
+
+# Для продакшена Fly.io будет использовать:
+# DATABASE_URL=postgres://...
+# ALLOWED_ORIGINS=https://ваш-фронтенд.vercel.app
+
+
+-- Создаём таблицу drivers
+CREATE TABLE drivers (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Создаём таблицу collection_points с FLOAT для координат
+CREATE TABLE collection_points (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    address VARCHAR(300),
+    latitude FLOAT NOT NULL,
+    longitude FLOAT NOT NULL,
+    city VARCHAR(100) DEFAULT 'Рязань'
+);
+
+-- Создаём таблицу routes с улучшениями:
+-- - scheduled_at вместо scheduled_time (TIMESTAMP для даты+времени)
+-- - Добавлен visited_at (когда реально посетили)
+-- - Добавлен comment (для заметок водителя)
+-- - updated_at для отслеживания изменений
+-- - Constraint на статус
+CREATE TABLE routes (
+    id SERIAL PRIMARY KEY,
+    driver_id INTEGER NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+    point_id INTEGER NOT NULL REFERENCES collection_points(id) ON DELETE CASCADE,
+    order_number INTEGER NOT NULL,
+    scheduled_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    visited_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    comment TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT valid_status CHECK (status IN ('pending', 'in_progress', 'completed', 'skipped', 'problem'))
+);
+
+-- Добавляем триггер для автоматического обновления updated_at
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_routes_updated_at
+BEFORE UPDATE ON routes
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at();
+
+-- Добавляем индексы для производительности
+CREATE INDEX idx_routes_driver_id ON routes(driver_id);
+CREATE INDEX idx_routes_status ON routes(status);
+CREATE INDEX idx_routes_point_id ON routes(point_id);
+
+module garbage_trucks/backend
+
+go 1.25.0
+
+require (
+	github.com/gorilla/mux v1.8.1
+	github.com/jackc/pgx/v5 v5.8.0
+	github.com/joho/godotenv v1.5.1
+)
+
+require (
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	golang.org/x/sync v0.17.0 // indirect
+	golang.org/x/text v0.29.0 // indirect
+)
+
+package main
+
+import (
+	"log"
+	"net/http"
+	"garbage_trucks/backend/internal/config"
+	"garbage_trucks/backend/internal/database"
+	"garbage_trucks/backend/internal/router"
+)
+
+func main() {
+	// Загружаем .env
+	cfg := config.Load()
+
+	// Подключаемся к базе данных
+	database.Init(cfg)
+
+	// Создаём роутер
+	r := router.NewRouter()
+
+	// Запускаем сервер
+	log.Printf("Сервер запущен на http://localhost%s", cfg.Port)
+	log.Fatal(http.ListenAndServe(cfg.Port, r))
+}
+
+package config
+
+import (
+	"os"
+	"strings"
+
+	"github.com/joho/godotenv"
+)
+
+type Config struct {
+	DBUser      string
+	DBPassword  string
+	DBHost      string
+	DBPort      string
+	DBName      string
+	Port        string
+	FrontendURL string
+	DatabaseURL string // Для Fly.io + Neon.tech
+}
+
+func Load() *Config {
+	// Загружаем .env (только для разработки)
+	if _, err := os.Stat(".env"); err == nil {
+		godotenv.Load()
+	}
+
+	// В продакшене Fly.io передаёт DATABASE_URL как единую строку
+	databaseURL := os.Getenv("DATABASE_URL")
+	var dbUser, dbPassword, dbHost, dbPort, dbName string
+
+	if databaseURL != "" {
+		// Парсим DATABASE_URL если он есть
+		// Формат: postgres://user:password@host:port/dbname
+		parts := strings.Split(strings.TrimPrefix(databaseURL, "postgres://"), "@")
+		if len(parts) == 2 {
+			credsHost := strings.Split(parts[0], ":")
+			if len(credsHost) >= 2 {
+				dbUser = credsHost[0]
+				dbPassword = credsHost[1]
+			}
+
+			hostDB := strings.Split(parts[1], "/")
+			if len(hostDB) == 2 {
+				hostPort := strings.Split(hostDB[0], ":")
+				if len(hostPort) == 2 {
+					dbHost = hostPort[0]
+					dbPort = hostPort[1]
+				} else {
+					dbHost = hostPort[0]
+					dbPort = "5432"
+				}
+				dbName = hostDB[1]
+				// Убираем параметры запроса если есть
+				if idx := strings.Index(dbName, "?"); idx != -1 {
+					dbName = dbName[:idx]
+				}
+			}
+		}
+	}
+
+	return &Config{
+		DBUser:      getEnvWithFallback("DB_USER", dbUser, "postgres"),
+		DBPassword:  getEnvWithFallback("DB_PASSWORD", dbPassword, "toor"),
+		DBHost:      getEnvWithFallback("DB_HOST", dbHost, "127.0.0.1"),
+		DBPort:      getEnvWithFallback("DB_PORT", dbPort, "5432"),
+		DBName:      getEnvWithFallback("DB_NAME", dbName, "garbage_trucks"),
+		Port:        ":" + getEnv("PORT", "8080"),
+		FrontendURL: getEnv("FRONTEND_URL", "http://localhost:3000"),
+		DatabaseURL: databaseURL, // Сохраняем оригинальный URL
+	}
+}
+
+func getEnv(key, fallback string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return fallback
+}
+
+func getEnvWithFallback(key, primaryFallback, secondaryFallback string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	if primaryFallback != "" {
+		return primaryFallback
+	}
+	return secondaryFallback
+}
+
+package database
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"strings"
+	"garbage_trucks/backend/internal/config"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+var Pool *pgxpool.Pool
+
+func Init(cfg *config.Config) {
+	var connStr string
+	
+	// Приоритет: DATABASE_URL > отдельные параметры
+	if cfg.DatabaseURL != "" {
+		connStr = cfg.DatabaseURL
+		// Добавляем sslmode=require если его нет (нужно для Neon.tech)
+		if !strings.Contains(connStr, "sslmode=") {
+			if strings.Contains(connStr, "?") {
+				connStr += "&sslmode=require"
+			} else {
+				connStr += "?sslmode=require"
+			}
+		}
+	} else {
+		// Используем отдельные параметры (для разработки)
+		connStr = fmt.Sprintf(
+			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName,
+		)
+	}
+
+	log.Printf("Подключаемся к БД: %s", strings.Replace(connStr, cfg.DBPassword, "***", 1))
+
+	var err error
+	Pool, err = pgxpool.New(context.Background(), connStr)
+	if err != nil {
+		log.Fatal("Ошибка подключения к базе данных:", err)
+	}
+
+	// Проверяем подключение
+	if err = Pool.Ping(context.Background()); err != nil {
+		log.Fatal("Пинг базы не прошёл:", err)
+	}
+
+	log.Println("✅ Подключение к PostgreSQL установлено успешно!")
+}
+
+package handlers
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"garbage_trucks/backend/internal/models"
+	"github.com/gorilla/mux"
+)
+
+func GetDriversHandler(w http.ResponseWriter, r *http.Request) {
+	drivers, err := models.GetAllDrivers(context.Background())
+	if err != nil {
+		http.Error(w, "Ошибка получения водителей", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(drivers); err != nil {
+		http.Error(w, "Ошибка кодирования ответа", http.StatusInternalServerError)
+	}
+}
+
+func CreateDriverHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Неверный формат данных", http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		http.Error(w, "Имя обязательно", http.StatusBadRequest)
+		return
+	}
+
+	driver, err := models.CreateDriver(context.Background(), req.Name)
+	if err != nil {
+		http.Error(w, "Ошибка создания водителя", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(driver); err != nil {
+		http.Error(w, "Ошибка кодирования ответа", http.StatusInternalServerError)
+	}
+}
+
+func DeleteDriverHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "id должен быть числом", http.StatusBadRequest)
+		return
+	}
+
+	err = models.DeleteDriver(context.Background(), id)
+	if err != nil {
+		http.Error(w, "Ошибка удаления водителя", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "success"}); err != nil {
+		http.Error(w, "Ошибка кодирования ответа", http.StatusInternalServerError)
+	}
+}
+
+func UpdateDriverHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "id должен быть числом", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Неверный формат данных", http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		http.Error(w, "Имя обязательно", http.StatusBadRequest)
+		return
+	}
+
+	driver, err := models.UpdateDriver(context.Background(), id, req.Name)
+	if err != nil {
+		http.Error(w, "Ошибка обновления водителя", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(driver); err != nil {
+		http.Error(w, "Ошибка кодирования ответа", http.StatusInternalServerError)
+	}
+}
+
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+)
+
+func HealthHandler(w http.ResponseWriter, r *http.Request) {
+	response := map[string]string{
+		"status":  "ok",
+		"message": "Garbage Trucks API работает!",
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+package handlers
+
+import (
+	"context"
+	"encoding/json"
+	"log"
+	"net/http"
+	"strconv"
+	"garbage_trucks/backend/internal/models"
+	"github.com/gorilla/mux"
+)
+
+func GetPointsHandler(w http.ResponseWriter, r *http.Request) {
+	points, err := models.GetAllPoints(context.Background())
+	if err != nil {
+		http.Error(w, "Ошибка получения точек", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(points); err != nil {
+		http.Error(w, "Ошибка кодирования ответа", http.StatusInternalServerError)
+	}
+}
+
+func CreatePointHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Метод не разрешён", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Name      string  `json:"name"`
+		Address   string  `json:"address"`
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
+		City      string  `json:"city"`
+		DriverIDs []int   `json:"driver_ids"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("Error decoding request: %v", err)
+		http.Error(w, "Неверный формат данных", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Creating point: %s, drivers: %v, len: %d", req.Name, req.DriverIDs, len(req.DriverIDs))
+
+	if req.Name == "" || req.Address == "" {
+		http.Error(w, "Название и адрес обязательны", http.StatusBadRequest)
+		return
+	}
+
+	point, err := models.CreatePointWithDrivers(context.Background(), req.Name, req.Address, req.City, req.Latitude, req.Longitude, req.DriverIDs)
+	if err != nil {
+		log.Printf("Error creating point: %v", err)
+		http.Error(w, "Ошибка создания точки", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(point); err != nil {
+		http.Error(w, "Ошибка кодирования ответа", http.StatusInternalServerError)
+	}
+}
+
+func DeletePointHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "DELETE" {
+		http.Error(w, "Метод не разрешён", http.StatusMethodNotAllowed)
+		return
+	}
+
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "id должен быть числом", http.StatusBadRequest)
+		return
+	}
+
+	err = models.DeletePoint(context.Background(), id)
+	if err != nil {
+		http.Error(w, "Ошибка удаления точки", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "success"}); err != nil {
+		http.Error(w, "Ошибка кодирования ответа", http.StatusInternalServerError)
+	}
+}
+
+func UpdatePointHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "PUT" {
+		http.Error(w, "Метод не разрешён", http.StatusMethodNotAllowed)
+		return
+	}
+
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "id должен быть числом", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Name      string  `json:"name"`
+		Address   string  `json:"address"`
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
+		City      string  `json:"city"`
+		DriverIDs []int   `json:"driver_ids"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Неверный формат данных", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Updating point %d: %s, drivers: %v", id, req.Name, req.DriverIDs)
+
+	if req.Name == "" || req.Address == "" {
+		http.Error(w, "Название и адрес обязательны", http.StatusBadRequest)
+		return
+	}
+
+	point, err := models.UpdatePointWithDrivers(context.Background(), id, req.Name, req.Address, req.City, req.Latitude, req.Longitude, req.DriverIDs)
+	if err != nil {
+		log.Printf("Error updating point: %v", err)
+		http.Error(w, "Ошибка обновления точки", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(point); err != nil {
+		http.Error(w, "Ошибка кодирования ответа", http.StatusInternalServerError)
+	}
+}
+
+package handlers
+
+import (
+	"context"
+	"encoding/json"
+	"garbage_trucks/backend/internal/models"
+	"log"
+	"net/http"
+	"strconv"
+)
+
+func GetRoutesHandler(w http.ResponseWriter, r *http.Request) {
+	driverIDStr := r.URL.Query().Get("driver_id")
+	pointIDStr := r.URL.Query().Get("point_id")
+
+	if driverIDStr != "" {
+		// Получаем маршруты по водителю
+		driverID, err := strconv.Atoi(driverIDStr)
+		if err != nil {
+			http.Error(w, "driver_id должен быть числом", http.StatusBadRequest)
+			return
+		}
+
+		// Получаем информацию о водителе
+		driver, err := models.GetDriverByID(context.Background(), driverID)
+		if err != nil {
+			http.Error(w, "Ошибка получения водителя", http.StatusInternalServerError)
+			return
+		}
+
+		routes, err := models.GetRoutesByDriverID(context.Background(), driverID)
+		if err != nil {
+			http.Error(w, "Ошибка получения маршрута", http.StatusInternalServerError)
+			return
+		}
+
+		response := map[string]interface{}{
+			"driver": driver,
+			"routes": routes,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "Ошибка кодирования ответа", http.StatusInternalServerError)
+		}
+	} else if pointIDStr != "" {
+		// Получаем маршруты по точке
+		pointID, err := strconv.Atoi(pointIDStr)
+		if err != nil {
+			http.Error(w, "point_id должен быть числом", http.StatusBadRequest)
+			return
+		}
+
+		routes, err := models.GetRoutesByPointID(context.Background(), pointID)
+		if err != nil {
+			http.Error(w, "Ошибка получения маршрутов", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(routes); err != nil {
+			http.Error(w, "Ошибка кодирования ответа", http.StatusInternalServerError)
+		}
+	} else {
+		http.Error(w, "driver_id или point_id обязателен", http.StatusBadRequest)
+	}
+}
+
+func UpdateRouteStatusHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Метод не разрешён", http.StatusMethodNotAllowed)
+		return
+	}
+
+	routeIDStr := r.URL.Query().Get("route_id")
+	status := r.URL.Query().Get("status")
+
+	log.Printf("UpdateRouteStatusHandler: route_id=%s, status=%s", routeIDStr, status)
+
+	if routeIDStr == "" || status == "" {
+		http.Error(w, "route_id и status обязательны", http.StatusBadRequest)
+		return
+	}
+
+	routeID, err := strconv.Atoi(routeIDStr)
+	if err != nil {
+		http.Error(w, "route_id должен быть числом", http.StatusBadRequest)
+		return
+	}
+
+	err = models.UpdateRouteStatus(context.Background(), routeID, status)
+	if err != nil {
+		log.Printf("UpdateRouteStatus error: %v", err)
+		http.Error(w, "Ошибка обновления статуса", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "success"}); err != nil {
+		http.Error(w, "Ошибка кодирования ответа", http.StatusInternalServerError)
+	}
+}
+
+package middleware
+
+import "net/http"
+
+func CORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Разрешаем все origins временно
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Access-Control-Max-Age", "3600")
+		
+		// ВАЖНО: обрабатываем OPTIONS ДО вызова next
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		
+		next.ServeHTTP(w, r)
+	})
+}
+
+package models
+
+import (
+	"context"
+	"log"
+	"garbage_trucks/backend/internal/database"
+)
+
+type CollectionPoint struct {
+	ID        int      `json:"id"`
+	Name      string   `json:"name"`
+	Address   string   `json:"address"`
+	Latitude  float64  `json:"latitude"`
+	Longitude float64  `json:"longitude"`
+	City      string   `json:"city"`
+	Drivers   []string `json:"drivers,omitempty"`
+}
+
+func GetAllPoints(ctx context.Context) ([]CollectionPoint, error) {
+	rows, err := database.Pool.Query(ctx, `
+		SELECT 
+			cp.id, cp.name, cp.address, cp.latitude, cp.longitude, cp.city,
+			COALESCE(ARRAY_AGG(DISTINCT d.name) FILTER (WHERE d.name IS NOT NULL), '{}') as drivers
+		FROM collection_points cp
+		LEFT JOIN routes r ON cp.id = r.point_id
+		LEFT JOIN drivers d ON r.driver_id = d.id
+		GROUP BY cp.id, cp.name, cp.address, cp.latitude, cp.longitude, cp.city
+		ORDER BY cp.id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var points []CollectionPoint
+	for rows.Next() {
+		var p CollectionPoint
+		if err := rows.Scan(&p.ID, &p.Name, &p.Address, &p.Latitude, &p.Longitude, &p.City, &p.Drivers); err != nil {
+			return nil, err
+		}
+		points = append(points, p)
+	}
+
+	return points, rows.Err()
+}
+
+func CreatePoint(ctx context.Context, name, address, city string, latitude, longitude float64) (*CollectionPoint, error) {
+	var point CollectionPoint
+	err := database.Pool.QueryRow(ctx, `
+		INSERT INTO collection_points (name, address, latitude, longitude, city) 
+		VALUES ($1, $2, $3, $4, $5) 
+		RETURNING id, name, address, latitude, longitude, city
+	`, name, address, latitude, longitude, city).Scan(&point.ID, &point.Name, &point.Address, &point.Latitude, &point.Longitude, &point.City)
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	return &point, nil
+}
+
+func CreatePointWithDrivers(ctx context.Context, name, address, city string, latitude, longitude float64, driverIDs []int) (*CollectionPoint, error) {
+	// Создаем точку
+	point, err := CreatePoint(ctx, name, address, city, latitude, longitude)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Printf("Created point %d, adding drivers: %v", point.ID, driverIDs)
+
+	// Создаем маршруты для каждого водителя
+	for _, driverID := range driverIDs {
+		// Получаем следующий order_number для водителя
+		var maxOrder int
+		err := database.Pool.QueryRow(ctx, `
+			SELECT COALESCE(MAX(order_number), 0) FROM routes WHERE driver_id = $1
+		`, driverID).Scan(&maxOrder)
+		if err != nil {
+			log.Printf("Error getting max order for driver %d: %v", driverID, err)
+			continue
+		}
+
+		// Создаем маршрут
+		_, err = database.Pool.Exec(ctx, `
+			INSERT INTO routes (driver_id, point_id, order_number, scheduled_at, status)
+			VALUES ($1, $2, $3, CURRENT_DATE + TIME '08:00:00' + (INTERVAL '10 minutes' * ($3 - 1)), 'pending')
+		`, driverID, point.ID, maxOrder+1)
+		if err != nil {
+			log.Printf("Error creating route for driver %d, point %d: %v", driverID, point.ID, err)
+			continue
+		}
+		log.Printf("Created route: driver=%d, point=%d, order=%d", driverID, point.ID, maxOrder+1)
+	}
+
+	return point, nil
+}
+
+func DeletePoint(ctx context.Context, id int) error {
+	_, err := database.Pool.Exec(ctx, `DELETE FROM collection_points WHERE id = $1`, id)
+	return err
+}
+
+func UpdatePoint(ctx context.Context, id int, name, address, city string, latitude, longitude float64) (*CollectionPoint, error) {
+	var point CollectionPoint
+	err := database.Pool.QueryRow(ctx, `
+		UPDATE collection_points 
+		SET name = $1, address = $2, latitude = $3, longitude = $4, city = $5
+		WHERE id = $6
+		RETURNING id, name, address, latitude, longitude, city
+	`, name, address, latitude, longitude, city, id).Scan(&point.ID, &point.Name, &point.Address, &point.Latitude, &point.Longitude, &point.City)
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	return &point, nil
+}
+
+func UpdatePointWithDrivers(ctx context.Context, id int, name, address, city string, latitude, longitude float64, driverIDs []int) (*CollectionPoint, error) {
+	// Обновляем точку
+	point, err := UpdatePoint(ctx, id, name, address, city, latitude, longitude)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Printf("Updated point %d, updating drivers: %v", id, driverIDs)
+
+	// Удаляем старые маршруты
+	_, err = database.Pool.Exec(ctx, `DELETE FROM routes WHERE point_id = $1`, id)
+	if err != nil {
+		log.Printf("Error deleting old routes for point %d: %v", id, err)
+		return nil, err
+	}
+
+	// Создаем новые маршруты
+	for _, driverID := range driverIDs {
+		var maxOrder int
+		err := database.Pool.QueryRow(ctx, `
+			SELECT COALESCE(MAX(order_number), 0) FROM routes WHERE driver_id = $1
+		`, driverID).Scan(&maxOrder)
+		if err != nil {
+			log.Printf("Error getting max order for driver %d: %v", driverID, err)
+			continue
+		}
+
+		_, err = database.Pool.Exec(ctx, `
+			INSERT INTO routes (driver_id, point_id, order_number, scheduled_at, status)
+			VALUES ($1, $2, $3, CURRENT_DATE + TIME '08:00:00' + (INTERVAL '10 minutes' * ($3 - 1)), 'pending')
+		`, driverID, point.ID, maxOrder+1)
+		if err != nil {
+			log.Printf("Error creating route for driver %d, point %d: %v", driverID, point.ID, err)
+			continue
+		}
+		log.Printf("Created route: driver=%d, point=%d, order=%d", driverID, point.ID, maxOrder+1)
+	}
+
+	return point, nil
+}
+
+package models
+
+import (
+	"context"
+	"garbage_trucks/backend/internal/database"
+	"time"
+)
+
+type Driver struct {
+	ID        int       `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+}
+
+func GetAllDrivers(ctx context.Context) ([]Driver, error) {
+	rows, err := database.Pool.Query(ctx, `
+		SELECT id, name, created_at 
+		FROM drivers 
+		ORDER BY id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var drivers []Driver
+	for rows.Next() {
+		var d Driver
+		if err := rows.Scan(&d.ID, &d.Name, &d.CreatedAt); err != nil {
+			return nil, err
+		}
+		drivers = append(drivers, d)
+	}
+
+	return drivers, rows.Err()
+}
+
+func GetDriverByID(ctx context.Context, id int) (*Driver, error) {
+	var driver Driver
+	err := database.Pool.QueryRow(ctx, `
+		SELECT id, name, created_at 
+		FROM drivers 
+		WHERE id = $1
+	`, id).Scan(&driver.ID, &driver.Name, &driver.CreatedAt)
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	return &driver, nil
+}
+
+func CreateDriver(ctx context.Context, name string) (*Driver, error) {
+	var driver Driver
+	err := database.Pool.QueryRow(ctx, `
+		INSERT INTO drivers (name) 
+		VALUES ($1) 
+		RETURNING id, name, created_at
+	`, name).Scan(&driver.ID, &driver.Name, &driver.CreatedAt)
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	return &driver, nil
+}
+
+func DeleteDriver(ctx context.Context, id int) error {
+	_, err := database.Pool.Exec(ctx, `DELETE FROM drivers WHERE id = $1`, id)
+	return err
+}
+
+func UpdateDriver(ctx context.Context, id int, name string) (*Driver, error) {
+	var driver Driver
+	err := database.Pool.QueryRow(ctx, `
+		UPDATE drivers 
+		SET name = $1
+		WHERE id = $2
+		RETURNING id, name, created_at
+	`, name, id).Scan(&driver.ID, &driver.Name, &driver.CreatedAt)
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	return &driver, nil
+}
+
+package models
+
+import (
+	"context"
+	"garbage_trucks/backend/internal/database"
+	"log"
+	"time"
+)
+
+type Route struct {
+	ID          int              `json:"id"`
+	DriverID    int              `json:"driver_id"`
+	PointID     int              `json:"point_id"`
+	OrderNumber int              `json:"order_number"`
+	ScheduledAt time.Time        `json:"scheduled_at"`
+	Status      string           `json:"status"`
+	CompletedAt *time.Time       `json:"completed_at,omitempty"`
+	Comment     *string          `json:"comment,omitempty"`
+	Point       *CollectionPoint `json:"point"`
+}
+
+func GetRoutesByDriverID(ctx context.Context, driverID int) ([]Route, error) {
+	rows, err := database.Pool.Query(ctx, `
+        SELECT 
+            r.id, r.driver_id, r.point_id, r.order_number,
+            r.scheduled_at, r.status, r.completed_at, r.comment,
+            cp.name, cp.address, cp.latitude, cp.longitude, cp.city
+        FROM routes r
+        JOIN collection_points cp ON r.point_id = cp.id
+        WHERE r.driver_id = $1
+        ORDER BY r.order_number
+    `, driverID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var routes []Route
+	for rows.Next() {
+		var r Route
+		var completedAt *time.Time
+		var comment *string
+		var cpName, cpAddress, cpCity string
+		var cpLat, cpLon float64
+
+		err := rows.Scan(
+			&r.ID, &r.DriverID, &r.PointID, &r.OrderNumber,
+			&r.ScheduledAt, &r.Status, &completedAt, &comment,
+			&cpName, &cpAddress, &cpLat, &cpLon, &cpCity,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		r.CompletedAt = completedAt
+		r.Comment = comment
+		r.Point = &CollectionPoint{
+			ID:        r.PointID,
+			Name:      cpName,
+			Address:   cpAddress,
+			Latitude:  cpLat,
+			Longitude: cpLon,
+			City:      cpCity,
+		}
+
+		routes = append(routes, r)
+	}
+
+	return routes, rows.Err()
+}
+
+func UpdateRouteStatus(ctx context.Context, routeID int, status string) error {
+query := `
+    UPDATE routes 
+    SET status = $1, 
+        completed_at = CASE WHEN $1 = 'completed' THEN CURRENT_TIMESTAMP ELSE completed_at END,
+        visited_at = CASE WHEN $1 IN ('in_progress', 'completed', 'problem') THEN COALESCE(visited_at, CURRENT_TIMESTAMP) ELSE visited_at END
+    WHERE id = $2
+`
+	log.Printf("UpdateRouteStatus: routeID=%d, status=%s, query=%s", routeID, status, query)
+
+	result, err := database.Pool.Exec(ctx, query, status, routeID)
+	if err != nil {
+		log.Printf("UpdateRouteStatus Exec error: %v", err)
+		return err
+	}
+
+	log.Printf("UpdateRouteStatus result: RowsAffected=%d", result.RowsAffected())
+
+	if result.RowsAffected() == 0 {
+		log.Printf("UpdateRouteStatus: No rows affected for routeID=%d", routeID)
+	}
+
+	return nil
+}
+
+func GetRoutesByPointID(ctx context.Context, pointID int) ([]Route, error) {
+	rows, err := database.Pool.Query(ctx, `
+        SELECT 
+            r.id, r.driver_id, r.point_id, r.order_number,
+            r.scheduled_at, r.status, r.completed_at, r.comment
+        FROM routes r
+        WHERE r.point_id = $1
+        ORDER BY r.driver_id
+    `, pointID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var routes []Route
+	for rows.Next() {
+		var r Route
+		err := rows.Scan(
+			&r.ID, &r.DriverID, &r.PointID, &r.OrderNumber,
+			&r.ScheduledAt, &r.Status, &r.CompletedAt, &r.Comment,
+		)
+		if err != nil {
+			return nil, err
+		}
+		routes = append(routes, r)
+	}
+
+	return routes, rows.Err()
+}
+
+package router
+
+import (
+	"net/http"
+	"github.com/gorilla/mux"
+	"garbage_trucks/backend/internal/handlers"
+	"garbage_trucks/backend/internal/middleware"
+)
+
+func NewRouter() *mux.Router {
+	r := mux.NewRouter()
+
+	// Middleware
+	r.Use(middleware.CORS)
+
+	// API Routes
+	// Health check
+	r.HandleFunc("/api/health", handlers.HealthHandler).Methods("GET")
+	
+	// Drivers
+	r.HandleFunc("/api/drivers", handlers.GetDriversHandler).Methods("GET")
+	r.HandleFunc("/api/drivers", handlers.CreateDriverHandler).Methods("POST")
+	r.HandleFunc("/api/drivers/{id}", handlers.UpdateDriverHandler).Methods("PUT")
+	r.HandleFunc("/api/drivers/{id}", handlers.DeleteDriverHandler).Methods("DELETE")
+	
+	// Points
+	r.HandleFunc("/api/points", handlers.GetPointsHandler).Methods("GET")
+	r.HandleFunc("/api/points", handlers.CreatePointHandler).Methods("POST")
+	r.HandleFunc("/api/points/{id}", handlers.UpdatePointHandler).Methods("PUT")
+	r.HandleFunc("/api/points/{id}", handlers.DeletePointHandler).Methods("DELETE")
+	
+	// Routes
+	r.HandleFunc("/api/routes", handlers.GetRoutesHandler).Methods("GET")
+	r.HandleFunc("/api/routes/status", handlers.UpdateRouteStatusHandler).Methods("POST", "PATCH")
+	
+	// ВАЖНО: Явно обрабатываем OPTIONS для всех маршрутов
+	r.Methods("OPTIONS").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Пустой обработчик, CORS middleware добавит заголовки
+		w.WriteHeader(http.StatusOK)
+	})
+
+	return r
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

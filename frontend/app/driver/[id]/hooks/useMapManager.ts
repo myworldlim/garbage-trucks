@@ -30,30 +30,74 @@ export const useMapManager = ({
   getStatusText,
 }: UseMapManagerProps) => {
   const mapRef = useRef<any>(null);
+  const placemarksRef = useRef<any[]>([]);
+  const multiRouteRef = useRef<any>(null);
 
-  const initMap = () => {
-    if (!ymaps || !routes || routes.length === 0) return;
+  // Очистка ТОЛЬКО меток (placemarks), НЕ трогаем маршрут
+  const clearPlacemarks = () => {
+    if (!mapRef.current) return;
+
+    placemarksRef.current.forEach((pm) => {
+      mapRef.current.geoObjects.remove(pm);
+    });
+    placemarksRef.current = [];
+  };
+
+  // Создаём карту один раз
+  useEffect(() => {
+    if (!ymaps || !routes.length || mapRef.current) return;
+
+    const defaultCenter: [number, number] = [54.6269, 39.7464];
 
     const center = userLocation
       ? [userLocation.lat, userLocation.lon]
-      : routes[0]
-      ? [routes[0].point.latitude, routes[0].point.longitude]
-      : [54.6269, 39.7464];
+      : routes[0]?.point
+        ? [routes[0].point.latitude, routes[0].point.longitude]
+        : defaultCenter;
 
     const map = new ymaps.Map('map', {
       center: center,
       zoom: 12,
       controls: ['zoomControl', 'geolocationControl'],
-      behaviors: ['drag', 'scrollZoom'],
+      behaviors: [
+        'drag',
+        'scrollZoom',
+        'dblClickZoom',
+        'multiTouch',
+        'pinchZoom',
+        'inertia',           // плавное затухание после свайпа
+      ],
     });
 
-    // Add traffic control
-    const trafficControl = new ymaps.control.TrafficControl({
-      state: true,
-    });
+    const trafficControl = new ymaps.control.TrafficControl({ state: true });
     map.controls.add(trafficControl);
 
-    // Add route placemarks
+    mapRef.current = map;
+
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.destroy();
+        mapRef.current = null;
+      }
+    };
+  }, [ymaps, routes.length]);
+
+  // Обновляем только метки и центр (маршрут не трогаем)
+  useEffect(() => {
+    if (!mapRef.current || !ymaps || !routes.length) return;
+
+    clearPlacemarks();
+
+    const map = mapRef.current;
+
+    // Центрируем карту
+    if (userLocation) {
+      map.setCenter([userLocation.lat, userLocation.lon], 13, { duration: 400 });
+    } else if (routes[0]?.point) {
+      map.setCenter([routes[0].point.latitude, routes[0].point.longitude], 12);
+    }
+
+    // Добавляем метки маршрутов
     routes.forEach((route, index) => {
       const placemark = new ymaps.Placemark(
         [route.point.latitude, route.point.longitude],
@@ -62,61 +106,48 @@ export const useMapManager = ({
             <strong>#${route.order_number} ${route.point.name}</strong><br/>
             ${route.point.address}<br/>
             Статус: ${getStatusText(route.status)}<br/>
-            <button onclick="buildRoute(${route.point.latitude}, ${route.point.longitude}, ${index})" style="margin-top: 10px; padding: 5px 10px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer;">Проложить маршрут</button>
+            <button onclick="buildRoute(${route.point.latitude}, ${route.point.longitude}, ${index})" style="margin-top:10px;padding:5px 10px;background:#4CAF50;color:white;border:none;border-radius:5px;cursor:pointer;">Проложить маршрут</button>
           `,
           iconCaption: `${index + 1}`,
         },
         {
           preset:
-            route.status === 'completed'
-              ? 'islands#greenCircleIcon'
-              : route.status === 'in_progress'
-              ? 'islands#blueCircleIcon'
-              : route.status === 'problem'
-              ? 'islands#redCircleIcon'
-              : 'islands#yellowCircleIcon',
+            route.status === 'completed' ? 'islands#greenCircleIcon' :
+            route.status === 'in_progress' ? 'islands#blueCircleIcon' :
+            route.status === 'problem' ? 'islands#redCircleIcon' :
+            'islands#yellowCircleIcon',
         }
       );
+
+      placemarksRef.current.push(placemark);
       map.geoObjects.add(placemark);
     });
 
-    // Add user location placemark
+    // Метка текущего положения
     if (userLocation) {
-      const userPlacemark = new ymaps.Placemark(
+      const userPm = new ymaps.Placemark(
         [userLocation.lat, userLocation.lon],
-        { balloonContent: 'Ваше текущее местоположение' },
+        { balloonContent: 'Ваше местоположение' },
         { preset: 'islands#redDotIcon' }
       );
-      map.geoObjects.add(userPlacemark);
+      placemarksRef.current.push(userPm);
+      map.geoObjects.add(userPm);
     }
+  }, [ymaps, routes, userLocation, getStatusText]);
 
-    // Build route function
-    (window as any).buildRoute = (
-      toLat: number,
-      toLon: number,
-      routeIndex: number
-    ) => {
-      if (!userLocation) {
-        alert('Геолокация недоступна. Используется приблизительное местоположение.');
-        return;
+  // Функция построения маршрута — очищаем только предыдущий маршрут
+  useEffect(() => {
+    if (!mapRef.current || !ymaps || !userLocation) return;
+
+    (window as any).buildRoute = (toLat: number, toLon: number, routeIndex?: number) => {
+      console.log("Строим маршрут до точки", routeIndex);
+
+      // Удаляем только старый маршрут (не трогаем метки)
+      if (multiRouteRef.current) {
+        mapRef.current.geoObjects.remove(multiRouteRef.current);
+        multiRouteRef.current = null;
       }
 
-      if (!mapRef.current || !ymaps) {
-        alert('Карта не загружена');
-        return;
-      }
-
-      // Remove old routes
-      mapRef.current.geoObjects.each((obj: any) => {
-        if (
-          obj.geometry &&
-          (obj.geometry.getType() === 'LineString' || obj.getRoute)
-        ) {
-          mapRef.current.geoObjects.remove(obj);
-        }
-      });
-
-      // Create multi-route with traffic awareness
       const multiRoute = new ymaps.multiRouter.MultiRoute(
         {
           referencePoints: [
@@ -133,51 +164,29 @@ export const useMapManager = ({
           wayPointStartIconColor: '#FF0000',
           wayPointFinishIconColor: '#4CAF50',
           routeActiveStrokeColor: '#0000FF',
-          routeActiveStrokeWidth: 4,
-          routeStrokeColor: '#CCCCCC',
-          routeStrokeWidth: 3,
-          routeActiveStrokeOpacity: 0.8,
+          routeActiveStrokeWidth: 6,
         }
       );
 
+      multiRouteRef.current = multiRoute;
       mapRef.current.geoObjects.add(multiRoute);
 
-      // Handle route loaded event
-      multiRoute.events.add(['routesloaded', 'routesfailed'], () => {
-        const activeRoute = multiRoute.getActiveRoute();
-        if (activeRoute) {
-          const duration = activeRoute.properties.get('duration');
-          const distance = activeRoute.properties.get('distance');
-
-          if (duration || distance) {
-            const durationText = duration ? formatDuration(duration.value) : '';
-            const distanceText = distance
-              ? (distance.value / 1000).toFixed(1) + ' км'
-              : '';
-
-            const infoText = `${durationText}${
-              durationText && distanceText ? ', ' : ''
-            }${distanceText}`;
-            console.log(`Маршрут: ${infoText}`);
-
-            if (infoText) {
-              alert(
-                `Расстояние: ${distanceText}\nВремя в пути: ${durationText}`
-              );
-            }
-          }
+      // Логируем результат
+      multiRoute.events.add('routesloaded', () => {
+        console.log("Маршрут успешно загружен");
+        const active = multiRoute.getActiveRoute();
+        if (active) {
+          const dist = active.properties.get('distance')?.text || '';
+          const time = active.properties.get('duration')?.text || '';
+          console.log(`Дистанция: ${dist}, Время: ${time}`);
         }
       });
+
+      multiRoute.events.add('error', (e: any) => {
+        console.error("Ошибка маршрута:", e);
+      });
     };
-
-    mapRef.current = map;
-  };
-
-  useEffect(() => {
-    if (ymaps && routes && routes.length > 0) {
-      initMap();
-    }
-  }, [ymaps, routes, userLocation]);
+  }, [ymaps, userLocation]);
 
   return mapRef;
 };

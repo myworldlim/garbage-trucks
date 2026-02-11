@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"garbage_trucks/backend/internal/models"
+	"garbage_trucks/backend/internal/database"
 	"log"
 	"net/http"
 	"strconv"
@@ -88,12 +89,26 @@ func UpdateRouteStatusHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = models.UpdateRouteStatus(context.Background(), routeID, status)
+	// Исправленный запрос
+	query := `
+		UPDATE routes 
+		SET 
+			status = $1,
+			completed_at = CASE WHEN $3 = 'completed' THEN CURRENT_TIMESTAMP ELSE completed_at END,
+			visited_at = CASE WHEN $3 IN ('in_progress', 'completed', 'problem') THEN COALESCE(visited_at, CURRENT_TIMESTAMP) ELSE visited_at END
+		WHERE id = $2
+	`
+
+	log.Printf("UpdateRouteStatus: routeID=%d, status=%s", routeID, status)
+
+	result, err := database.Pool.Exec(context.Background(), query, status, routeID, status)
 	if err != nil {
-		log.Printf("UpdateRouteStatus error: %v", err)
-		http.Error(w, "Ошибка обновления статуса", http.StatusInternalServerError)
+		log.Printf("UpdateRouteStatus Exec error: %v", err)
+		http.Error(w, "Ошибка обновления статуса: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	log.Printf("UpdateRouteStatus result: RowsAffected=%d", result.RowsAffected())
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]string{"status": "success"}); err != nil {

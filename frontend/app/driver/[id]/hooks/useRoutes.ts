@@ -27,7 +27,7 @@ export const useRoutes = (driverId: string | string[] | undefined) => {
   const [data, setData] = useState<RoutesResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchData = () => {
     if (!driverId) return;
 
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
@@ -44,6 +44,16 @@ export const useRoutes = (driverId: string | string[] | undefined) => {
         console.error('Error fetching routes:', err);
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    fetchData(); // Первичная загрузка
+
+    const interval = setInterval(() => {
+      fetchData(); // Автообновление каждые 60 секунд
+    }, 60000);
+
+    return () => clearInterval(interval); // Очистка при размонтировании
   }, [driverId]);
 
   const updateStatus = async (routeId: number, status: string) => {
