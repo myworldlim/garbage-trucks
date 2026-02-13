@@ -1,4 +1,3 @@
-// C:\Users\Dmitry\Desktop\garbage_ruck\frontend\app\driver\[id]\hooks\useMapManager.ts
 import { useEffect, useRef, useState } from 'react';
 
 interface Route {
@@ -18,6 +17,7 @@ interface UseMapManagerProps {
   ymaps: any;
   routes: Route[];
   userLocation: { lat: number; lon: number } | null;
+  followMode: boolean; // 👈 Добавляем пропс для режима слежения
   onStatusUpdate?: (routeId: number, status: string) => void;
   getStatusText: (status: string) => string;
 }
@@ -26,6 +26,7 @@ export const useMapManager = ({
   ymaps,
   routes,
   userLocation,
+  followMode, // 👈 Получаем пропс
   onStatusUpdate,
   getStatusText,
 }: UseMapManagerProps) => {
@@ -33,7 +34,8 @@ export const useMapManager = ({
   const placemarksRef = useRef<any[]>([]);
   const multiRouteRef = useRef<any>(null);
   const [isMapReady, setIsMapReady] = useState(false);
-  const buildRouteRef = useRef<any>(null); // Добавляем ref для функции
+  const buildRouteRef = useRef<any>(null);
+  const lastLocationRef = useRef<any>(null); // Для отслеживания изменений
 
   // Создаём карту ОДИН РАЗ
   useEffect(() => {
@@ -43,13 +45,14 @@ export const useMapManager = ({
     
     if (!mapElement || mapElement.offsetWidth === 0 || mapElement.offsetHeight === 0) {
       const timeoutId = setTimeout(() => {
-        window.dispatchEvent(new Event('resize')); // Принудительный ресайз
+        window.dispatchEvent(new Event('resize'));
       }, 100);
       return () => clearTimeout(timeoutId);
     }
 
     try {
       const defaultCenter: [number, number] = [54.609188, 39.666385];
+      
       const center = userLocation
         ? [userLocation.lat, userLocation.lon]
         : routes[0]?.point
@@ -81,7 +84,7 @@ export const useMapManager = ({
         setIsMapReady(false);
       }
     };
-  }, [ymaps, routes.length]); // Убираем userLocation из зависимостей
+  }, [ymaps, routes.length]);
 
   // Обновляем метки
   useEffect(() => {
@@ -99,7 +102,7 @@ export const useMapManager = ({
       placemarksRef.current = [];
     } catch (e) {}
 
-    // Добавляем новые метки
+    // Добавляем новые метки маршрутов
     routes.forEach((route, index) => {
       if (!route.point?.latitude || !route.point?.longitude) return;
 
@@ -151,9 +154,14 @@ export const useMapManager = ({
       }
     });
 
-    // Добавляем метку пользователя
+    // 👇 ВСЕГДА добавляем метку пользователя, если есть координаты
     if (userLocation?.lat && userLocation?.lon) {
       try {
+        // Проверяем, изменилась ли позиция
+        const locationChanged = !lastLocationRef.current || 
+          Math.abs(lastLocationRef.current.lat - userLocation.lat) > 0.0001 ||
+          Math.abs(lastLocationRef.current.lon - userLocation.lon) > 0.0001;
+
         const userPm = new ymaps.Placemark(
           [userLocation.lat, userLocation.lon],
           { 
@@ -167,21 +175,29 @@ export const useMapManager = ({
         placemarksRef.current.push(userPm);
         map.geoObjects.add(userPm);
         
-        // Центрируем карту на пользователе
-        map.setCenter([userLocation.lat, userLocation.lon], 13, { duration: 300 });
+        // 👇 ЦЕНТРИРУЕМ ТОЛЬКО ЕСЛИ followMode = true
+        if (followMode) {
+          console.log('🎯 Слежение включено - центрируем карту');
+          map.setCenter([userLocation.lat, userLocation.lon], 17, { duration: 300 });
+        } else {
+          console.log('⏸️ Слежение выключено - карта не центрируется');
+        }
+
+        lastLocationRef.current = userLocation; // Запоминаем последнюю позицию
+        
       } catch (e) {
         console.warn('Ошибка добавления метки пользователя:', e);
       }
     }
 
-  }, [ymaps, routes, userLocation, isMapReady, getStatusText]);
+  }, [ymaps, routes, userLocation, followMode, isMapReady, getStatusText]); // 👈 Добавили followMode в зависимости
 
-  // Функция построения маршрута - создаём ОДИН РАЗ
+  // Функция построения маршрута
   useEffect(() => {
     if (!mapRef.current || !ymaps || !isMapReady) return;
 
     const buildRoute = (toLat: number, toLon: number) => {
-      console.log('🚗 Построение маршрута...', { toLat, toLon });
+      console.log('🚗 Построение маршрута...');
       
       if (!mapRef.current || !ymaps) {
         console.error('❌ Карта не готова');
@@ -195,7 +211,6 @@ export const useMapManager = ({
       }
 
       try {
-        // Удаляем старый маршрут
         if (multiRouteRef.current) {
           try {
             mapRef.current.geoObjects.remove(multiRouteRef.current);
@@ -203,10 +218,6 @@ export const useMapManager = ({
           multiRouteRef.current = null;
         }
 
-        console.log('📍 Откуда:', [userLocation.lat, userLocation.lon]);
-        console.log('📍 Куда:', [toLat, toLon]);
-
-        // Создаем маршрут
         const multiRoute = new ymaps.multiRouter.MultiRoute(
           {
             referencePoints: [
@@ -227,7 +238,6 @@ export const useMapManager = ({
           }
         );
 
-        // Обработчики событий
         multiRoute.events.add('routesloaded', () => {
           console.log('✅ Маршрут построен');
           const activeRoute = multiRoute.getActiveRoute();
@@ -250,7 +260,6 @@ export const useMapManager = ({
       }
     };
 
-    // Сохраняем функцию в ref и в window
     buildRouteRef.current = buildRoute;
     (window as any).buildRoute = buildRoute;
     console.log('✅ Функция buildRoute готова');
@@ -258,54 +267,7 @@ export const useMapManager = ({
     return () => {
       delete (window as any).buildRoute;
     };
-  }, [ymaps, isMapReady]); // Убираем userLocation из зависимостей!
-
-  // Отдельный эффект для обновления userLocation в функции маршрута
-  useEffect(() => {
-    if (buildRouteRef.current && userLocation) {
-      // Обновляем функцию с новыми координатами
-      const buildRoute = (toLat: number, toLon: number) => {
-        console.log('🚗 Построение маршрута (обновленная позиция)...');
-        
-        if (!mapRef.current || !ymaps || !userLocation) {
-          console.error('❌ Данные не готовы');
-          return;
-        }
-
-        try {
-          if (multiRouteRef.current) {
-            mapRef.current.geoObjects.remove(multiRouteRef.current);
-            multiRouteRef.current = null;
-          }
-
-          const multiRoute = new ymaps.multiRouter.MultiRoute(
-            {
-              referencePoints: [
-                [userLocation.lat, userLocation.lon],
-                [toLat, toLon],
-              ],
-              params: {
-                routingMode: 'auto',
-                avoidTrafficJams: true,
-              },
-            },
-            {
-              boundsAutoApply: true,
-            }
-          );
-
-          multiRouteRef.current = multiRoute;
-          mapRef.current.geoObjects.add(multiRoute);
-          
-        } catch (error) {
-          console.error('❌ Ошибка:', error);
-        }
-      };
-
-      buildRouteRef.current = buildRoute;
-      (window as any).buildRoute = buildRoute;
-    }
-  }, [userLocation, ymaps]); // Зависимость только от userLocation
+  }, [ymaps, isMapReady, userLocation]); // 👈 Добавили userLocation
 
   return { mapRef, isMapReady };
 };
