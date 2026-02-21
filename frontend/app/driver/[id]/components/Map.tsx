@@ -6,7 +6,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { LatLngExpression, Map as LeafletMap } from 'leaflet';
 
-// Фикс иконок Leaflet для Next.js (только на клиенте)
+// Фикс иконок Leaflet (только на клиенте)
 if (typeof window !== 'undefined') {
   delete (L.Icon.Default.prototype as any)._getIconUrl;
   L.Icon.Default.mergeOptions({
@@ -37,15 +37,36 @@ interface MapProps {
   getStatusColor: (status: string) => string;
 }
 
-// Следит за позицией пользователя и центрирует карту
-function MapUpdater({
+// Внутренний компонент, где можно безопасно использовать useMap()
+function MapInner({
+  routes,
   userLocation,
   followMode,
+  getStatusText,
+  getStatusColor,
+  forwardedRef,
 }: {
+  routes: Route[];
   userLocation: { lat: number; lon: number } | null;
   followMode: boolean;
+  getStatusText: (status: string) => string;
+  getStatusColor: (status: string) => string;
+  forwardedRef: React.ForwardedRef<LeafletMap | null>;
 }) {
-  const map = useMap();
+  const map = useMap(); // Теперь это безопасно — внутри MapContainer
+
+  // Сохраняем ref на карту
+  useEffect(() => {
+    if (forwardedRef) {
+      if (typeof forwardedRef === 'function') {
+        forwardedRef(map);
+      } else {
+        forwardedRef.current = map;
+      }
+    }
+  }, [map, forwardedRef]);
+
+  // Следим за позицией пользователя
   const lastLocationRef = useRef<{ lat: number; lon: number } | null>(null);
 
   useEffect(() => {
@@ -62,10 +83,105 @@ function MapUpdater({
     }
   }, [userLocation, followMode, map]);
 
-  return null;
+  const getCustomIcon = (status: string) => {
+    const color = getStatusColor(status);
+    return new L.DivIcon({
+      className: 'custom-marker',
+      html: `<div style="
+        background: ${color};
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        border: 3px solid white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+        font-size: 14px;
+      "></div>`,
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
+    });
+  };
+
+  const defaultCenter: LatLngExpression = [54.7, 39.79] as const;
+
+  const center: LatLngExpression = userLocation
+    ? [userLocation.lat, userLocation.lon] as const
+    : routes.length > 0
+    ? [routes[0].point.latitude, routes[0].point.longitude] as const
+    : defaultCenter;
+
+  return (
+    <>
+      <TileLayer
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        maxZoom={19}
+      />
+
+      {routes.map((route) => (
+        <Marker
+          key={route.id}
+          position={[route.point.latitude, route.point.longitude] as const}
+          icon={getCustomIcon(route.status)}
+        >
+          <Popup>
+            <div style={{ minWidth: '220px' }}>
+              <strong style={{ fontSize: '16px' }}>
+                #{route.order_number} {route.point.name}
+              </strong>
+              <br />
+              <span style={{ color: '#666', fontSize: '13px' }}>
+                {route.point.address}
+              </span>
+              <div style={{ marginTop: '8px', padding: '5px', background: '#f5f5f5', borderRadius: '4px' }}>
+                Статус:{' '}
+                <strong style={{ color: getStatusColor(route.status) }}>
+                  {getStatusText(route.status)}
+                </strong>
+              </div>
+            </div>
+          </Popup>
+        </Marker>
+      ))}
+
+      {userLocation && (
+        <Marker
+          position={[userLocation.lat, userLocation.lon] as const}
+          icon={
+            new L.DivIcon({
+              className: 'user-marker',
+              html: `<div style="
+                background: #F44336;
+                width: 20px;
+                height: 20px;
+                border-radius: 50%;
+                border: 3px solid white;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                animation: pulse 2s infinite;
+              "></div>
+              <style>
+                @keyframes pulse {
+                  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7); }
+                  70% { transform: scale(1.2); box-shadow: 0 0 0 10px rgba(244, 67, 54, 0); }
+                  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0); }
+                }
+              </style>`,
+              iconSize: [20, 20],
+              iconAnchor: [10, 10],
+            })
+          }
+        >
+        </Marker>
+      )}
+    </>
+  );
 }
 
-// Основной компонент карты
+// Корневой компонент
 export const Map = forwardRef<LeafletMap | null, MapProps>(
   ({ routes, userLocation, followMode, getStatusText, getStatusColor }, ref) => {
     const defaultCenter: LatLngExpression = [54.7, 39.79] as const;
@@ -76,141 +192,23 @@ export const Map = forwardRef<LeafletMap | null, MapProps>(
       ? [routes[0].point.latitude, routes[0].point.longitude] as const
       : defaultCenter;
 
-    const mapRef = useRef<LeafletMap | null>(null);
-
-    // Сохраняем ссылку на карту после её инициализации
-    useEffect(() => {
-      if (mapRef.current && ref) {
-        (ref as React.MutableRefObject<LeafletMap | null>).current = mapRef.current;
-      }
-    }, [ref]);
-
-    const getCustomIcon = (status: string) => {
-      const color = getStatusColor(status);
-      return new L.DivIcon({
-        className: 'custom-marker',
-        html: `<div style="
-          background: ${color};
-          width: 30px;
-          height: 30px;
-          border-radius: 50%;
-          border: 3px solid white;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-weight: bold;
-          font-size: 14px;
-        "></div>`,
-        iconSize: [30, 30],
-        iconAnchor: [15, 15],
-      });
-    };
-
     return (
       <MapContainer
         center={center}
         zoom={12}
         style={{ width: '100%', height: '100%' }}
-        // whenReady не принимает аргументы — используем useMap() внутри
-        whenReady={() => {
-          // Здесь карта уже готова, но мы берём её через ref или useMap в других местах
-        }}
       >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          maxZoom={19}
+        <MapInner
+          routes={routes}
+          userLocation={userLocation}
+          followMode={followMode}
+          getStatusText={getStatusText}
+          getStatusColor={getStatusColor}
+          forwardedRef={ref}
         />
-
-        {/* Внутренний компонент, который получает доступ к map */}
-        <MapUpdater userLocation={userLocation} followMode={followMode} />
-
-        {/* Сохраняем ref на карту */}
-        <MapRefSetter ref={mapRef} forwardedRef={ref} />
-
-        {routes.map((route) => (
-          <Marker
-            key={route.id}
-            position={[route.point.latitude, route.point.longitude] as const}
-            icon={getCustomIcon(route.status)}
-          >
-            <Popup>
-              <div style={{ minWidth: '220px' }}>
-                <strong style={{ fontSize: '16px' }}>
-                  #{route.order_number} {route.point.name}
-                </strong>
-                <br />
-                <span style={{ color: '#666', fontSize: '13px' }}>
-                  {route.point.address}
-                </span>
-                <div style={{ marginTop: '8px', padding: '5px', background: '#f5f5f5', borderRadius: '4px' }}>
-                  Статус:{' '}
-                  <strong style={{ color: getStatusColor(route.status) }}>
-                    {getStatusText(route.status)}
-                  </strong>
-                </div>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
-
-        {userLocation && (
-          <Marker
-            position={[userLocation.lat, userLocation.lon] as const}
-            icon={
-              new L.DivIcon({
-                className: 'user-marker',
-                html: `<div style="
-                  background: #F44336;
-                  width: 20px;
-                  height: 20px;
-                  border-radius: 50%;
-                  border: 3px solid white;
-                  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-                  animation: pulse 2s infinite;
-                "></div>
-                <style>
-                  @keyframes pulse {
-                    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7); }
-                    70% { transform: scale(1.2); box-shadow: 0 0 0 10px rgba(244, 67, 54, 0); }
-                    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0); }
-                  }
-                </style>`,
-                iconSize: [20, 20],
-                iconAnchor: [10, 10],
-              })
-            }
-          >
-            <Popup>📍 Ваше местоположение</Popup>
-          </Marker>
-        )}
       </MapContainer>
     );
   }
 );
 
 Map.displayName = 'Map';
-
-// Вспомогательный компонент для установки ref на карту
-function MapRefSetter({
-  ref,
-  forwardedRef,
-}: {
-  ref: React.MutableRefObject<LeafletMap | null>;
-  forwardedRef: React.ForwardedRef<LeafletMap | null>;
-}) {
-  const map = useMap();
-
-  useEffect(() => {
-    ref.current = map;
-    if (typeof forwardedRef === 'function') {
-      forwardedRef(map);
-    } else if (forwardedRef) {
-      forwardedRef.current = map;
-    }
-  }, [map, ref, forwardedRef]);
-
-  return null;
-}
