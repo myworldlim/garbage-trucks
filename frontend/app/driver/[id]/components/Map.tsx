@@ -1,12 +1,12 @@
-//frontend\app\driver\[id]\components\Map.tsx
 'use client';
 
 import { forwardRef, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import type { LatLngExpression, Map as LeafletMap } from 'leaflet';
 
-// Фикс для иконок Leaflet в Next.js
+// Фикс иконок Leaflet для Next.js (только на клиенте)
 if (typeof window !== 'undefined') {
   delete (L.Icon.Default.prototype as any)._getIconUrl;
   L.Icon.Default.mergeOptions({
@@ -37,10 +37,10 @@ interface MapProps {
   getStatusColor: (status: string) => string;
 }
 
-// Компонент для обновления вида карты
+// Следит за позицией пользователя и центрирует карту
 function MapUpdater({
   userLocation,
-  followMode
+  followMode,
 }: {
   userLocation: { lat: number; lon: number } | null;
   followMode: boolean;
@@ -51,7 +51,8 @@ function MapUpdater({
   useEffect(() => {
     if (!userLocation || !followMode) return;
 
-    const locationChanged = !lastLocationRef.current ||
+    const locationChanged =
+      !lastLocationRef.current ||
       Math.abs(lastLocationRef.current.lat - userLocation.lat) > 0.0001 ||
       Math.abs(lastLocationRef.current.lon - userLocation.lon) > 0.0001;
 
@@ -64,25 +65,26 @@ function MapUpdater({
   return null;
 }
 
-// Экспортируем компонент карты
-export const Map = forwardRef<L.Map | null, MapProps>(
+// Основной компонент карты
+export const Map = forwardRef<LeafletMap | null, MapProps>(
   ({ routes, userLocation, followMode, getStatusText, getStatusColor }, ref) => {
-    const defaultCenter: [number, number] = [54.70, 39.79];
-    const center = userLocation
-      ? [userLocation.lat, userLocation.lon]
+    const defaultCenter: LatLngExpression = [54.7, 39.79] as const;
+
+    const center: LatLngExpression = userLocation
+      ? [userLocation.lat, userLocation.lon] as const
       : routes.length > 0
-      ? [routes[0].point.latitude, routes[0].point.longitude]
+      ? [routes[0].point.latitude, routes[0].point.longitude] as const
       : defaultCenter;
 
-    const mapRef = useRef<L.Map | null>(null);
+    const mapRef = useRef<LeafletMap | null>(null);
 
+    // Сохраняем ссылку на карту после её инициализации
     useEffect(() => {
       if (mapRef.current && ref) {
-        (ref as any).current = mapRef.current;
+        (ref as React.MutableRefObject<LeafletMap | null>).current = mapRef.current;
       }
     }, [ref]);
 
-    // Кастомная иконка для статусов
     const getCustomIcon = (status: string) => {
       const color = getStatusColor(status);
       return new L.DivIcon({
@@ -111,11 +113,9 @@ export const Map = forwardRef<L.Map | null, MapProps>(
         center={center}
         zoom={12}
         style={{ width: '100%', height: '100%' }}
-        whenCreated={(mapInstance) => {
-          mapRef.current = mapInstance;
-          if (ref) {
-            (ref as any).current = mapInstance;
-          }
+        // whenReady не принимает аргументы — используем useMap() внутри
+        whenReady={() => {
+          // Здесь карта уже готова, но мы берём её через ref или useMap в других местах
         }}
       >
         <TileLayer
@@ -124,12 +124,16 @@ export const Map = forwardRef<L.Map | null, MapProps>(
           maxZoom={19}
         />
 
+        {/* Внутренний компонент, который получает доступ к map */}
         <MapUpdater userLocation={userLocation} followMode={followMode} />
+
+        {/* Сохраняем ref на карту */}
+        <MapRefSetter ref={mapRef} forwardedRef={ref} />
 
         {routes.map((route) => (
           <Marker
             key={route.id}
-            position={[route.point.latitude, route.point.longitude]}
+            position={[route.point.latitude, route.point.longitude] as const}
             icon={getCustomIcon(route.status)}
           >
             <Popup>
@@ -154,28 +158,30 @@ export const Map = forwardRef<L.Map | null, MapProps>(
 
         {userLocation && (
           <Marker
-            position={[userLocation.lat, userLocation.lon]}
-            icon={new L.DivIcon({
-              className: 'user-marker',
-              html: `<div style="
-                background: #F44336;
-                width: 20px;
-                height: 20px;
-                border-radius: 50%;
-                border: 3px solid white;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-                animation: pulse 2s infinite;
-              "></div>
-              <style>
-                @keyframes pulse {
-                  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7); }
-                  70% { transform: scale(1.2); box-shadow: 0 0 0 10px rgba(244, 67, 54, 0); }
-                  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0); }
-                }
-              </style>`,
-              iconSize: [20, 20],
-              iconAnchor: [10, 10],
-            })}
+            position={[userLocation.lat, userLocation.lon] as const}
+            icon={
+              new L.DivIcon({
+                className: 'user-marker',
+                html: `<div style="
+                  background: #F44336;
+                  width: 20px;
+                  height: 20px;
+                  border-radius: 50%;
+                  border: 3px solid white;
+                  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                  animation: pulse 2s infinite;
+                "></div>
+                <style>
+                  @keyframes pulse {
+                    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7); }
+                    70% { transform: scale(1.2); box-shadow: 0 0 0 10px rgba(244, 67, 54, 0); }
+                    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0); }
+                  }
+                </style>`,
+                iconSize: [20, 20],
+                iconAnchor: [10, 10],
+              })
+            }
           >
             <Popup>📍 Ваше местоположение</Popup>
           </Marker>
@@ -186,3 +192,25 @@ export const Map = forwardRef<L.Map | null, MapProps>(
 );
 
 Map.displayName = 'Map';
+
+// Вспомогательный компонент для установки ref на карту
+function MapRefSetter({
+  ref,
+  forwardedRef,
+}: {
+  ref: React.MutableRefObject<LeafletMap | null>;
+  forwardedRef: React.ForwardedRef<LeafletMap | null>;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    ref.current = map;
+    if (typeof forwardedRef === 'function') {
+      forwardedRef(map);
+    } else if (forwardedRef) {
+      forwardedRef.current = map;
+    }
+  }, [map, ref, forwardedRef]);
+
+  return null;
+}

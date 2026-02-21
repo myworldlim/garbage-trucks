@@ -3,8 +3,10 @@ const withPWA = require('next-pwa')({
   register: true,
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development',
+
+  // Важно: для стратегий с networkTimeoutSeconds используем ТОЛЬКО NetworkFirst
   runtimeCaching: [
-    // 1. OSM тайлы - CacheFirst (самое важное для оффлайн-карты)
+    // 1. OSM тайлы — CacheFirst (самое важное для оффлайн-карты)
     {
       urlPattern: ({ url }) =>
         url.hostname.includes('tile.openstreetmap.org') ||
@@ -17,8 +19,8 @@ const withPWA = require('next-pwa')({
       options: {
         cacheName: 'osm-tiles-cache',
         expiration: {
-          maxEntries: 20000,
-          maxAgeSeconds: 90 * 24 * 60 * 60,
+          maxEntries: 8000,               // уменьшено с 20000, чтобы не превысить квоту
+          maxAgeSeconds: 90 * 24 * 60 * 60, // 90 дней
           purgeOnQuotaError: true,
         },
         cacheableResponse: {
@@ -26,41 +28,58 @@ const withPWA = require('next-pwa')({
         },
       },
     },
-    // 2. OSRM роутинг - StaleWhileRevalidate
+
+    // 2. OSRM роутинг — NetworkFirst (с таймаутом 10 сек)
     {
       urlPattern: ({ url }) =>
         url.hostname.includes('router.project-osrm.org') ||
         url.pathname.includes('/route/v1/'),
-      handler: 'StaleWhileRevalidate',
+      handler: 'NetworkFirst',           // ← ИСПРАВЛЕНО: было StaleWhileRevalidate
       options: {
         cacheName: 'osrm-routes-cache',
         networkTimeoutSeconds: 10,
         expiration: {
           maxEntries: 500,
-          maxAgeSeconds: 24 * 60 * 60,
+          maxAgeSeconds: 24 * 60 * 60,   // 1 сутки
         },
         cacheableResponse: {
           statuses: [0, 200],
         },
       },
     },
-    // 3. API-запросы — StaleWhileRevalidate
+
+    // 3. API-запросы — NetworkFirst (с таймаутом)
     {
       urlPattern: /\/api\//,
-      handler: 'StaleWhileRevalidate',
+      handler: 'NetworkFirst',           // ← ИСПРАВЛЕНО: было StaleWhileRevalidate
       options: {
         cacheName: 'api-cache',
         networkTimeoutSeconds: 10,
         expiration: {
           maxEntries: 100,
-          maxAgeSeconds: 60 * 60,
+          maxAgeSeconds: 60 * 60,        // 1 час
         },
         cacheableResponse: {
           statuses: [0, 200],
         },
       },
     },
-    // 4. Статические файлы Next.js
+
+    // 4. Навигация (HTML-страницы) — NetworkFirst с fallback
+    {
+      urlPattern: ({ request }) => request.mode === 'navigate',
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'pages-cache',
+        networkTimeoutSeconds: 10,
+        expiration: {
+          maxEntries: 50,
+          maxAgeSeconds: 30 * 24 * 60 * 60, // 30 дней
+        },
+      },
+    },
+
+    // 5. Статические файлы Next.js (_next/static/)
     {
       urlPattern: /^https?:\/\/[^/]+\/_next\/static\//,
       handler: 'CacheFirst',
@@ -72,7 +91,8 @@ const withPWA = require('next-pwa')({
         },
       },
     },
-    // 5. Изображения, иконки, шрифты
+
+    // 6. Изображения, иконки, шрифты
     {
       urlPattern: /\.(?:png|jpg|jpeg|svg|webp|ico|woff2?)$/,
       handler: 'CacheFirst',
@@ -90,10 +110,11 @@ const withPWA = require('next-pwa')({
 module.exports = withPWA({
   reactStrictMode: true,
   images: {
-    unoptimized: true,
+    unoptimized: true, // для Leaflet и PWA часто нужно
   },
-  // Разрешаем внешние изображения для Leaflet
-  async rewrites() {
-    return [];
-  },
+
+  // Если понадобятся rewrites — можно вернуть
+  // async rewrites() {
+  //   return [];
+  // },
 });
