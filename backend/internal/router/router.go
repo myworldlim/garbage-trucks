@@ -1,3 +1,4 @@
+//backend\internal\router\router.go
 package router
 
 import (
@@ -16,26 +17,25 @@ func NewRouter() *mux.Router {
 	// API Routes
 	// Health check
 	r.HandleFunc("/api/health", handlers.HealthHandler).Methods("GET")
-	
+
 	// Drivers
 	r.HandleFunc("/api/drivers", handlers.GetDriversHandler).Methods("GET")
 	r.HandleFunc("/api/drivers", handlers.CreateDriverHandler).Methods("POST")
 	r.HandleFunc("/api/drivers/{id}", handlers.UpdateDriverHandler).Methods("PUT")
 	r.HandleFunc("/api/drivers/{id}", handlers.DeleteDriverHandler).Methods("DELETE")
-	
+
 	// Points
 	r.HandleFunc("/api/points", handlers.GetPointsHandler).Methods("GET")
 	r.HandleFunc("/api/points", handlers.CreatePointHandler).Methods("POST")
 	r.HandleFunc("/api/points/{id}", handlers.UpdatePointHandler).Methods("PUT")
 	r.HandleFunc("/api/points/{id}", handlers.DeletePointHandler).Methods("DELETE")
-	
+
 	// Routes
 	r.HandleFunc("/api/routes", handlers.GetRoutesHandler).Methods("GET")
 	r.HandleFunc("/api/routes/status", handlers.UpdateRouteStatusHandler).Methods("POST", "PATCH")
-	
-	// ВАЖНО: Явно обрабатываем OPTIONS для всех маршрутов
+
+	// OPTIONS для всех маршрутов (CORS preflight)
 	r.Methods("OPTIONS").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Пустой обработчик, CORS middleware добавит заголовки
 		w.WriteHeader(http.StatusOK)
 	})
 

@@ -1,5 +1,5 @@
-// C:\Users\Dmitry\Desktop\garbage_ruck\frontend\app\driver\[id]\hooks\useGeolocation.ts
-import { useEffect, useState, useCallback } from 'react';
+//frontend\app\driver\[id]\hooks\useGeolocation.ts
+import { useState, useCallback } from 'react';
 
 export const useGeolocation = () => {
   const [userLocation, setUserLocation] = useState<{ lat: number; lon: number } | null>(null);
@@ -18,7 +18,6 @@ export const useGeolocation = () => {
 
     setIsWatching(true);
 
-    // Сначала получаем одноразовую позицию
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setUserLocation({
@@ -29,10 +28,6 @@ export const useGeolocation = () => {
       },
       (error) => {
         console.warn('Geolocation error:', error.message);
-        setUserLocation({
-          lat: 54.609188,
-          lon: 39.666385,
-        });
         setError(error.message);
       },
       {
@@ -42,7 +37,6 @@ export const useGeolocation = () => {
       }
     );
 
-    // Затем начинаем отслеживание
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
         setUserLocation({
@@ -64,20 +58,5 @@ export const useGeolocation = () => {
     return watchId;
   }, []);
 
-  useEffect(() => {
-    let watchId: number;
-
-    if (isWatching) {
-      watchId = requestGeolocation() as number;
-    }
-
-    return () => {
-      if (watchId) {
-        navigator.geolocation.clearWatch(watchId);
-      }
-      setIsWatching(false);
-    };
-  }, [isWatching, requestGeolocation]);
-
-  return { userLocation, error, requestGeolocation: () => setIsWatching(true) };
+  return { userLocation, error, requestGeolocation };
 };

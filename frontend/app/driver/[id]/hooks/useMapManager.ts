@@ -1,322 +1,168 @@
-// C:\Users\Dmitry\Desktop\garbage_ruck\frontend\app\driver\[id]\hooks\useMapManager.ts
-import { useEffect, useRef, useState } from 'react';
+// //frontend\app\driver\[id]\hooks\useMapManager.ts
+// import { useEffect, useRef, useState } from 'react';
+// import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+// import L from 'leaflet';
+// import 'leaflet/dist/leaflet.css';
 
-interface Route {
-  id: number;
-  order_number: number;
-  scheduled_at: string;
-  status: string;
-  point: {
-    name: string;
-    address: string;
-    latitude: number;
-    longitude: number;
-  };
-}
+// // Фикс для иконок Leaflet в Next.js
+// const fixLeafletIcons = () => {
+//   delete (L.Icon.Default.prototype as any)._getIconUrl;
+//   L.Icon.Default.mergeOptions({
+//     iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+//     iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+//     shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+//   });
+// };
 
-interface UseMapManagerProps {
-  ymaps: any;
-  routes: Route[];
-  userLocation: { lat: number; lon: number } | null;
-  onStatusUpdate?: (routeId: number, status: string) => void;
-  getStatusText: (status: string) => string;
-}
+// interface Route {
+//   id: number;
+//   order_number: number;
+//   scheduled_at: string;
+//   status: string;
+//   point: {
+//     name: string;
+//     address: string;
+//     latitude: number;
+//     longitude: number;
+//   };
+// }
 
-export const useMapManager = ({
-  ymaps,
-  routes,
-  userLocation,
-  onStatusUpdate,
-  getStatusText,
-}: UseMapManagerProps) => {
-  const mapRef = useRef<any>(null);
-  const placemarksRef = useRef<any[]>([]);
-  const multiRouteRef = useRef<any>(null);
-  const [isMapReady, setIsMapReady] = useState(false);
-  const buildRouteRef = useRef<any>(null); // Добавляем ref для функции
+// interface UseMapManagerProps {
+//   routes: Route[];
+//   userLocation: { lat: number; lon: number } | null;
+//   followMode: boolean;
+//   onStatusUpdate?: (routeId: number, status: string) => void;
+//   getStatusText: (status: string) => string;
+//   getStatusColor: (status: string) => string;
+// }
 
-  // Создаём карту ОДИН РАЗ
-  useEffect(() => {
-    if (!ymaps || !routes.length || mapRef.current) return;
+// // Компонент для обновления вида карты
+// function MapUpdater({ 
+//   userLocation, 
+//   followMode,
+//   routes 
+// }: { 
+//   userLocation: { lat: number; lon: number } | null;
+//   followMode: boolean;
+//   routes: Route[];
+// }) {
+//   const map = useMap();
+//   const lastLocationRef = useRef<{ lat: number; lon: number } | null>(null);
 
-    const mapElement = document.getElementById('map');
-    
-    if (!mapElement || mapElement.offsetWidth === 0 || mapElement.offsetHeight === 0) {
-      const timeoutId = setTimeout(() => {
-        window.dispatchEvent(new Event('resize')); // Принудительный ресайз
-      }, 100);
-      return () => clearTimeout(timeoutId);
-    }
+//   useEffect(() => {
+//     if (!userLocation || !followMode) return;
 
-    try {
-      const defaultCenter: [number, number] = [54.609188, 39.666385];
-      const center = userLocation
-        ? [userLocation.lat, userLocation.lon]
-        : routes[0]?.point
-          ? [routes[0].point.latitude, routes[0].point.longitude]
-          : defaultCenter;
+//     const locationChanged = !lastLocationRef.current ||
+//       Math.abs(lastLocationRef.current.lat - userLocation.lat) > 0.0001 ||
+//       Math.abs(lastLocationRef.current.lon - userLocation.lon) > 0.0001;
 
-      const map = new ymaps.Map('map', {
-        center: center,
-        zoom: 12,
-        controls: ['zoomControl', 'geolocationControl', 'trafficControl'],
-      });
+//     if (locationChanged) {
+//       map.flyTo([userLocation.lat, userLocation.lon], 17, { duration: 0.5 });
+//       lastLocationRef.current = userLocation;
+//     }
+//   }, [userLocation, followMode, map]);
 
-      mapRef.current = map;
-      setIsMapReady(true);
-      console.log('✅ Карта создана');
+//   // Центрируем на всех точках при первой загрузке
+//   useEffect(() => {
+//     if (routes.length > 0 && !userLocation) {
+//       const bounds = routes.map(r => [r.point.latitude, r.point.longitude] as [number, number]);
+//       map.fitBounds(bounds, { padding: [50, 50] });
+//     }
+//   }, [routes, map, userLocation]);
 
-    } catch (error) {
-      console.error('❌ Ошибка создания карты:', error);
-    }
+//   return null;
+// }
 
-    return () => {
-      if (mapRef.current) {
-        try {
-          mapRef.current.destroy();
-        } catch (e) {
-          console.warn('Ошибка при удалении карты:', e);
-        }
-        mapRef.current = null;
-        setIsMapReady(false);
-      }
-    };
-  }, [ymaps, routes.length]); // Убираем userLocation из зависимостей
+// export const useMapManager = ({
+//   routes,
+//   userLocation,
+//   followMode,
+//   onStatusUpdate,
+//   getStatusText,
+//   getStatusColor,
+// }: UseMapManagerProps) => {
+//   const [isMapReady, setIsMapReady] = useState(false);
+//   const mapRef = useRef<L.Map | null>(null);
 
-  // Обновляем метки
-  useEffect(() => {
-    if (!mapRef.current || !ymaps || !routes.length || !isMapReady) return;
+//   useEffect(() => {
+//     fixLeafletIcons();
+//   }, []);
 
-    const map = mapRef.current;
-    
-    // Очищаем старые метки
-    try {
-      placemarksRef.current.forEach((pm) => {
-        try {
-          map.geoObjects.remove(pm);
-        } catch (e) {}
-      });
-      placemarksRef.current = [];
-    } catch (e) {}
+//   const MapComponent = () => {
+//     const defaultCenter: [number, number] = [54.70, 39.79];
+//     const center = userLocation
+//       ? [userLocation.lat, userLocation.lon]
+//       : routes.length > 0
+//       ? [routes[0].point.latitude, routes[0].point.longitude]
+//       : defaultCenter;
 
-    // Добавляем новые метки
-    routes.forEach((route, index) => {
-      if (!route.point?.latitude || !route.point?.longitude) return;
+//     return (
+//       <MapContainer
+//         center={center}
+//         zoom={12}
+//         style={{ width: '100%', height: '100%' }}
+//         whenCreated={(mapInstance) => {
+//           mapRef.current = mapInstance;
+//           setIsMapReady(true);
+//         }}
+//       >
+//         {/* OSM тайлы */}
+//         <TileLayer
+//           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+//           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+//           maxZoom={19}
+//         />
 
-      try {
-        const placemark = new ymaps.Placemark(
-          [route.point.latitude, route.point.longitude],
-          {
-            balloonContent: `
-              <div style="padding: 10px; min-width: 220px;">
-                <strong style="font-size: 16px;">#${route.order_number} ${route.point.name}</strong><br/>
-                <span style="color: #666; font-size: 13px;">${route.point.address}</span><br/>
-                <div style="margin-top: 8px; padding: 5px; background: #f5f5f5; border-radius: 4px;">
-                  Статус: <strong style="color: ${getStatusColor(route.status)};">${getStatusText(route.status)}</strong>
-                </div>
-                <button 
-                  onclick="window.buildRoute(${route.point.latitude}, ${route.point.longitude})" 
-                  style="
-                    margin-top: 12px;
-                    padding: 10px 16px;
-                    background: #2196F3;
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    font-size: 14px;
-                    font-weight: bold;
-                    width: 100%;
-                  "
-                >
-                  🚚 Построить маршрут
-                </button>
-              </div>
-            `,
-            iconCaption: `${index + 1}`,
-          },
-          {
-            preset: route.status === 'completed' ? 'islands#greenCircleIcon' :
-                    route.status === 'in_progress' ? 'islands#blueCircleIcon' :
-                    route.status === 'problem' ? 'islands#redCircleIcon' :
-                    'islands#yellowCircleIcon',
-            balloonCloseButton: true,
-          }
-        );
+//         {/* Обновление вида карты */}
+//         <MapUpdater 
+//           userLocation={userLocation} 
+//           followMode={followMode}
+//           routes={routes}
+//         />
 
-        placemarksRef.current.push(placemark);
-        map.geoObjects.add(placemark);
-      } catch (e) {
-        console.warn('Ошибка добавления метки:', e);
-      }
-    });
+//         {/* Метки точек маршрута */}
+//         {routes.map((route, index) => (
+//           <Marker
+//             key={route.id}
+//             position={[route.point.latitude, route.point.longitude]}
+//           >
+//             <Popup>
+//               <div style={{ minWidth: '200px' }}>
+//                 <strong style={{ fontSize: '16px' }}>
+//                   #{route.order_number} {route.point.name}
+//                 </strong>
+//                 <br />
+//                 <span style={{ color: '#666', fontSize: '13px' }}>
+//                   {route.point.address}
+//                 </span>
+//                 <div style={{ marginTop: '8px' }}>
+//                   Статус:{' '}
+//                   <strong style={{ color: getStatusColor(route.status) }}>
+//                     {getStatusText(route.status)}
+//                   </strong>
+//                 </div>
+//               </div>
+//             </Popup>
+//           </Marker>
+//         ))}
 
-    // Добавляем метку пользователя
-    if (userLocation?.lat && userLocation?.lon) {
-      try {
-        const userPm = new ymaps.Placemark(
-          [userLocation.lat, userLocation.lon],
-          { 
-            balloonContent: '📍 Ваше местоположение',
-            iconCaption: 'Вы здесь'
-          },
-          { 
-            preset: 'islands#redDotIcon',
-          }
-        );
-        placemarksRef.current.push(userPm);
-        map.geoObjects.add(userPm);
-        
-        // Центрируем карту на пользователе
-        map.setCenter([userLocation.lat, userLocation.lon], 13, { duration: 300 });
-      } catch (e) {
-        console.warn('Ошибка добавления метки пользователя:', e);
-      }
-    }
+//         {/* Метка пользователя */}
+//         {userLocation && (
+//           <Marker
+//             position={[userLocation.lat, userLocation.lon]}
+//             icon={new L.Icon({
+//               iconUrl: 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/marker-icon.png',
+//               iconSize: [25, 41],
+//               iconAnchor: [12, 41],
+//               popupAnchor: [1, -34],
+//             })}
+//           >
+//             <Popup>📍 Ваше местоположение</Popup>
+//           </Marker>
+//         )}
+//       </MapContainer>
+//     );
+//   };
 
-  }, [ymaps, routes, userLocation, isMapReady, getStatusText]);
-
-  // Функция построения маршрута - создаём ОДИН РАЗ
-  useEffect(() => {
-    if (!mapRef.current || !ymaps || !isMapReady) return;
-
-    const buildRoute = (toLat: number, toLon: number) => {
-      console.log('🚗 Построение маршрута...', { toLat, toLon });
-      
-      if (!mapRef.current || !ymaps) {
-        console.error('❌ Карта не готова');
-        return;
-      }
-
-      if (!userLocation) {
-        console.error('❌ Нет данных о местоположении');
-        alert('Пожалуйста, включите геолокацию');
-        return;
-      }
-
-      try {
-        // Удаляем старый маршрут
-        if (multiRouteRef.current) {
-          try {
-            mapRef.current.geoObjects.remove(multiRouteRef.current);
-          } catch (e) {}
-          multiRouteRef.current = null;
-        }
-
-        console.log('📍 Откуда:', [userLocation.lat, userLocation.lon]);
-        console.log('📍 Куда:', [toLat, toLon]);
-
-        // Создаем маршрут
-        const multiRoute = new ymaps.multiRouter.MultiRoute(
-          {
-            referencePoints: [
-              [userLocation.lat, userLocation.lon],
-              [toLat, toLon],
-            ],
-            params: {
-              routingMode: 'auto',
-              avoidTrafficJams: true,
-            },
-          },
-          {
-            boundsAutoApply: true,
-            wayPointStartIconColor: '#FF0000',
-            wayPointFinishIconColor: '#4CAF50',
-            routeActiveStrokeColor: '#2196F3',
-            routeActiveStrokeWidth: 6,
-          }
-        );
-
-        // Обработчики событий
-        multiRoute.events.add('routesloaded', () => {
-          console.log('✅ Маршрут построен');
-          const activeRoute = multiRoute.getActiveRoute();
-          if (activeRoute) {
-            const distance = activeRoute.properties.get('distance')?.text || '?';
-            const duration = activeRoute.properties.get('duration')?.text || '?';
-            console.log(`📊 Расстояние: ${distance}, Время: ${duration}`);
-          }
-        });
-
-        multiRoute.events.add('error', (e: any) => {
-          console.error('❌ Ошибка маршрута:', e);
-        });
-
-        multiRouteRef.current = multiRoute;
-        mapRef.current.geoObjects.add(multiRoute);
-
-      } catch (error) {
-        console.error('❌ Ошибка построения маршрута:', error);
-      }
-    };
-
-    // Сохраняем функцию в ref и в window
-    buildRouteRef.current = buildRoute;
-    (window as any).buildRoute = buildRoute;
-    console.log('✅ Функция buildRoute готова');
-
-    return () => {
-      delete (window as any).buildRoute;
-    };
-  }, [ymaps, isMapReady]); // Убираем userLocation из зависимостей!
-
-  // Отдельный эффект для обновления userLocation в функции маршрута
-  useEffect(() => {
-    if (buildRouteRef.current && userLocation) {
-      // Обновляем функцию с новыми координатами
-      const buildRoute = (toLat: number, toLon: number) => {
-        console.log('🚗 Построение маршрута (обновленная позиция)...');
-        
-        if (!mapRef.current || !ymaps || !userLocation) {
-          console.error('❌ Данные не готовы');
-          return;
-        }
-
-        try {
-          if (multiRouteRef.current) {
-            mapRef.current.geoObjects.remove(multiRouteRef.current);
-            multiRouteRef.current = null;
-          }
-
-          const multiRoute = new ymaps.multiRouter.MultiRoute(
-            {
-              referencePoints: [
-                [userLocation.lat, userLocation.lon],
-                [toLat, toLon],
-              ],
-              params: {
-                routingMode: 'auto',
-                avoidTrafficJams: true,
-              },
-            },
-            {
-              boundsAutoApply: true,
-            }
-          );
-
-          multiRouteRef.current = multiRoute;
-          mapRef.current.geoObjects.add(multiRoute);
-          
-        } catch (error) {
-          console.error('❌ Ошибка:', error);
-        }
-      };
-
-      buildRouteRef.current = buildRoute;
-      (window as any).buildRoute = buildRoute;
-    }
-  }, [userLocation, ymaps]); // Зависимость только от userLocation
-
-  return { mapRef, isMapReady };
-};
-
-function getStatusColor(status: string): string {
-  switch (status) {
-    case 'completed': return '#4CAF50';
-    case 'in_progress': return '#2196F3';
-    case 'pending': return '#FFC107';
-    case 'skipped': return '#9E9E9E';
-    case 'problem': return '#F44336';
-    default: return '#666';
-  }
-}
+//   return { MapComponent, isMapReady, mapRef };
+// };

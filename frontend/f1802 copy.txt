@@ -1,0 +1,2961 @@
+NEXT_PUBLIC_API_URL=http://localhost:8080
+NEXT_PUBLIC_MAP_CENTER_LAT=54.70
+NEXT_PUBLIC_MAP_CENTER_LON=39.79
+NEXT_PUBLIC_MAP_DEFAULT_ZOOM=11
+NEXT_PUBLIC_CACHE_MAX_SIZE_MB=250
+
+const withPWA = require('next-pwa')({
+  dest: 'public',
+  register: true,
+  skipWaiting: true,
+  disable: process.env.NODE_ENV === 'development',
+  runtimeCaching: [
+    // 1. OSM тайлы - CacheFirst (самое важное для оффлайн-карты)
+    {
+      urlPattern: ({ url }) =>
+        url.hostname.includes('tile.openstreetmap.org') ||
+        url.hostname.includes('a.tile.openstreetmap.org') ||
+        url.hostname.includes('b.tile.openstreetmap.org') ||
+        url.hostname.includes('c.tile.openstreetmap.org') ||
+        url.hostname.includes('tile.opentopomap.org') ||
+        url.pathname.match(/\/tile\/\d+\/\d+\/\d+\.\w+/i),
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'osm-tiles-cache',
+        expiration: {
+          maxEntries: 20000,
+          maxAgeSeconds: 90 * 24 * 60 * 60,
+          purgeOnQuotaError: true,
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
+      },
+    },
+    // 2. OSRM роутинг - StaleWhileRevalidate
+    {
+      urlPattern: ({ url }) =>
+        url.hostname.includes('router.project-osrm.org') ||
+        url.pathname.includes('/route/v1/'),
+      handler: 'StaleWhileRevalidate',
+      options: {
+        cacheName: 'osrm-routes-cache',
+        networkTimeoutSeconds: 10,
+        expiration: {
+          maxEntries: 500,
+          maxAgeSeconds: 24 * 60 * 60,
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
+      },
+    },
+    // 3. API-запросы — StaleWhileRevalidate
+    {
+      urlPattern: /\/api\//,
+      handler: 'StaleWhileRevalidate',
+      options: {
+        cacheName: 'api-cache',
+        networkTimeoutSeconds: 10,
+        expiration: {
+          maxEntries: 100,
+          maxAgeSeconds: 60 * 60,
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
+      },
+    },
+    // 4. Статические файлы Next.js
+    {
+      urlPattern: /^https?:\/\/[^/]+\/_next\/static\//,
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'next-static-assets',
+        expiration: {
+          maxEntries: 200,
+          maxAgeSeconds: 30 * 24 * 60 * 60,
+        },
+      },
+    },
+    // 5. Изображения, иконки, шрифты
+    {
+      urlPattern: /\.(?:png|jpg|jpeg|svg|webp|ico|woff2?)$/,
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'static-assets',
+        expiration: {
+          maxEntries: 100,
+          maxAgeSeconds: 30 * 24 * 60 * 60,
+        },
+      },
+    },
+  ],
+});
+
+module.exports = withPWA({
+  reactStrictMode: true,
+  images: {
+    unoptimized: true,
+  },
+  // Разрешаем внешние изображения для Leaflet
+  async rewrites() {
+    return [];
+  },
+});
+
+{
+  "name": "garbage-trucks-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^14.2.0",
+    "next-pwa": "^5.6.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "leaflet": "^1.9.4",
+    "react-leaflet": "^4.2.1",
+    "idb-keyval": "^6.2.1"
+  },
+  "devDependencies": {
+    "@types/leaflet": "^1.9.8",
+    "@types/minimatch": "^6.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.0.0"
+  }
+}
+
+{
+  "compilerOptions": {
+    "target": "es5",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    },
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
+
+
+{
+  "name": "Garbage Trucks",
+  "short_name": "Trucks",
+  "description": "Приложение для управления маршрутами мусоровозов",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4CAF50",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+
+//frontend\public\sw.js
+// Custom Service Worker для дополнительного кэширования
+self.addEventListener('install', (event) => {
+  console.log('[SW] Installing Service Worker...');
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  console.log('[SW] Activating Service Worker...');
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', (event) => {
+  const url = event.request.url;
+
+  // OSM тайлы - Cache First
+  if (url.includes('tile.openstreetmap.org')) {
+    event.respondWith(
+      caches.match(event.request).then((cachedResponse) => {
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+        return fetch(event.request).then((response) => {
+          if (response.ok) {
+            const cache = caches.open('osm-tiles-cache');
+            cache.then((c) => c.put(event.request, response.clone()));
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  // OSRM роутинг - Stale While Revalidate
+  if (url.includes('router.project-osrm.org')) {
+    event.respondWith(
+      caches.match(event.request).then((cachedResponse) => {
+        const fetchPromise = fetch(event.request).then((response) => {
+          if (response.ok) {
+            const cache = caches.open('osrm-routes-cache');
+            cache.then((c) => c.put(event.request, response.clone()));
+          }
+          return response;
+        });
+        return cachedResponse || fetchPromise;
+      })
+    );
+    return;
+  }
+});
+
+// Сообщение для триггера кэширования
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'CACHE_TILES') {
+    console.log('[SW] Received cache tiles request:', event.data.tiles);
+    // Логика кэширования обрабатывается в useTileCache хуке
+  }
+});
+
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background: #f5f5f5;
+  color: #333;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.header {
+  background: #4CAF50;
+  color: white;
+  padding: 10px;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.card {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  margin: 15px 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.3s;
+}
+
+.btn-primary {
+  background: #4CAF50;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #45a049;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+}
+
+/* Leaflet карта */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+}
+
+/* Индикатор оффлайна */
+.offline-indicator {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #F44336;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  z-index: 9999;
+  font-size: 14px;
+  font-weight: bold;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* Прогресс бар загрузки карты */
+.cache-progress {
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.8);
+  color: white;
+  padding: 15px 25px;
+  border-radius: 12px;
+  z-index: 9999;
+  min-width: 300px;
+  backdrop-filter: blur(4px);
+}
+
+.cache-progress-bar {
+  width: 100%;
+  height: 8px;
+  background: rgba(255,255,255,0.2);
+  border-radius: 4px;
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.cache-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4CAF50, #8BC34A);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+/* Кнопки управления картой */
+.map-control-btn {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  transition: all 0.2s;
+  font-size: 24px;
+}
+
+.map-control-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+}
+
+.map-control-btn:active {
+  transform: scale(0.95);
+}
+
+/* Анимация пульсации для активной кнопки */
+@keyframes pulse {
+  0% {
+    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.5), 0 0 0 0 rgba(76, 175, 80, 0.5);
+  }
+  70% {
+    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.5), 0 0 0 15px rgba(76, 175, 80, 0);
+  }
+  100% {
+    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.5), 0 0 0 0 rgba(76, 175, 80, 0);
+  }
+}
+
+.pulse-animation {
+  animation: pulse 2s infinite;
+}
+
+//frontend\app\layout.tsx
+import type { Metadata, Viewport } from 'next';
+import './globals.css';
+
+export const metadata: Metadata = {
+  title: 'Garbage Trucks',
+  description: 'Управление маршрутами мусоровозов',
+  manifest: '/manifest.json',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  themeColor: '#4CAF50',
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="ru">
+      <head>
+        <link rel="icon" href="/favicon.ico" />
+        <link rel="apple-touch-icon" href="/icon-192x192.png" />
+        {/* Leaflet CSS */}
+        <link
+          rel="stylesheet"
+          href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossOrigin=""
+        />
+      </head>
+      <body>{children}</body>
+    </html>
+  );
+}
+
+//frontend\app\page.tsx
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+
+interface Driver {
+  id: number;
+  name: string;
+}
+
+export default function Home() {
+  const router = useRouter();
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingDriverId, setDeletingDriverId] = useState<number | null>(null);
+  const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
+  const [newDriverName, setNewDriverName] = useState('');
+
+  useEffect(() => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    fetch(`${apiUrl}/api/drivers`)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        setDrivers(data || []);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Error fetching drivers:', err);
+        setLoading(false);
+      });
+  }, []);
+
+  const handleAddDriver = async () => {
+    if (!newDriverName.trim()) return;
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      if (editingDriver) {
+        const response = await fetch(`${apiUrl}/api/drivers/${editingDriver.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newDriverName }),
+        });
+        if (!response.ok) throw new Error('Failed to update driver');
+        const updatedDriver = await response.json();
+        setDrivers(drivers.map(d => d.id === editingDriver.id ? updatedDriver : d));
+      } else {
+        const response = await fetch(`${apiUrl}/api/drivers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newDriverName }),
+        });
+        if (!response.ok) throw new Error('Failed to create driver');
+        const newDriver = await response.json();
+        setDrivers([...drivers, newDriver]);
+      }
+      setShowModal(false);
+      setEditingDriver(null);
+      setNewDriverName('');
+    } catch (err) {
+      console.error('Error saving driver:', err);
+      alert('Ошибка сохранения водителя');
+    }
+  };
+
+  const handleDeleteDriver = async () => {
+    if (!deletingDriverId) return;
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/drivers/${deletingDriverId}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error('Failed to delete driver');
+      setDrivers(drivers.filter(d => d.id !== deletingDriverId));
+      setShowDeleteModal(false);
+      setDeletingDriverId(null);
+    } catch (err) {
+      console.error('Error deleting driver:', err);
+      alert('Ошибка удаления водителя');
+    }
+  };
+
+  if (loading) {
+    return <div className="loading">Загрузка...</div>;
+  }
+
+  return (
+    <div>
+      <div className="header">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+          <img src="/logo.png" alt="Logo" style={{ width: '50px', height: '50px' }} />
+          <h1 style={{ margin: 0 }}>Garbage Trucks</h1>
+        </div>
+        <p>Выберите водителя или номер машины</p>
+      </div>
+
+      <div className="container">
+        {drivers.length === 0 ? (
+          <div className="card">
+            <p>Нет доступных водителей. Проверьте подключение к серверу.</p>
+          </div>
+        ) : (
+          drivers.map(driver => (
+            <div key={driver.id} style={{ position: 'relative' }}>
+              <Link href={`/driver/${driver.id}`} style={{ textDecoration: 'none' }}>
+                <div className="card" style={{ cursor: 'pointer' }}>
+                  <h2>{driver.name}</h2>
+                  <p style={{ color: '#666', marginTop: '5px' }}>Посмотреть маршрут →</p>
+                </div>
+              </Link>
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  setDeletingDriverId(driver.id);
+                  setShowDeleteModal(true);
+                }}
+                style={{
+                  position: 'absolute',
+                  top: '10px',
+                  right: '25px',
+                  background: '#F44336',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '30px',
+                  height: '30px',
+                  cursor: 'pointer',
+                  fontSize: '18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 10
+                }}
+              >
+                ×
+              </button>
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  setEditingDriver(driver);
+                  setNewDriverName(driver.name);
+                  setShowModal(true);
+                }}
+                style={{
+                  position: 'absolute',
+                  bottom: '10px',
+                  right: '25px',
+                  background: '#2196F3',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '30px',
+                  height: '30px',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 10
+                }}
+              >
+                ✏️
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+
+      <button
+        onClick={() => setShowModal(true)}
+        style={{
+          position: 'fixed',
+          bottom: '30px',
+          left: '30px',
+          width: '60px',
+          height: '60px',
+          borderRadius: '50%',
+          background: '#4CAF50',
+          color: 'white',
+          border: 'none',
+          fontSize: '32px',
+          cursor: 'pointer',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}
+      >
+        +
+      </button>
+
+      <button
+        onClick={() => router.push('/points')}
+        style={{
+          position: 'fixed',
+          bottom: '30px',
+          right: '30px',
+          width: '60px',
+          height: '60px',
+          borderRadius: '50%',
+          background: '#2196F3',
+          color: 'white',
+          border: 'none',
+          fontSize: '16px',
+          cursor: 'pointer',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          fontWeight: 'bold'
+        }}
+      >
+        Точки
+      </button>
+
+      {showModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000
+          }}
+          onClick={() => setShowModal(false)}
+        >
+          <div
+            style={{
+              background: 'white',
+              padding: '30px',
+              borderRadius: '12px',
+              width: '90%',
+              maxWidth: '400px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.2)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginBottom: '20px' }}>{editingDriver ? 'Редактировать водителя' : 'Добавить водителя'}</h2>
+            <input
+              type="text"
+              placeholder="Имя или номер машины"
+              value={newDriverName}
+              onChange={(e) => setNewDriverName(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '12px',
+                fontSize: '16px',
+                border: '2px solid #ddd',
+                borderRadius: '8px',
+                marginBottom: '20px',
+                boxSizing: 'border-box'
+              }}
+            />
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={handleAddDriver}
+                className="btn"
+                style={{ flex: 1, background: '#4CAF50', color: 'white', padding: '12px', fontSize: '16px' }}
+              >
+                {editingDriver ? 'Сохранить' : 'Добавить'}
+              </button>
+              <button
+                onClick={() => { setShowModal(false); setEditingDriver(null); setNewDriverName(''); }}
+                className="btn"
+                style={{ flex: 1, background: '#9E9E9E', color: 'white', padding: '12px', fontSize: '16px' }}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000
+          }}
+          onClick={() => setShowDeleteModal(false)}
+        >
+          <div
+            style={{
+              background: 'white',
+              padding: '30px',
+              borderRadius: '12px',
+              width: '90%',
+              maxWidth: '400px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.2)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginBottom: '20px' }}>Удалить водителя?</h2>
+            <p style={{ marginBottom: '20px', color: '#666' }}>Это действие нельзя отменить. Все маршруты водителя будут удалены.</p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={handleDeleteDriver}
+                className="btn"
+                style={{ flex: 1, background: '#F44336', color: 'white', padding: '12px', fontSize: '16px' }}
+              >
+                Удалить
+              </button>
+              <button
+                onClick={() => { setShowDeleteModal(false); setDeletingDriverId(null); }}
+                className="btn"
+                style={{ flex: 1, background: '#9E9E9E', color: 'white', padding: '12px', fontSize: '16px' }}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+
+interface Point {
+  id: number;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  city: string;
+  drivers?: string[];
+}
+
+interface Driver {
+  id: number;
+  name: string;
+}
+
+export default function PointsPage() {
+  const router = useRouter();
+  const [points, setPoints] = useState<Point[]>([]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingPointId, setDeletingPointId] = useState<number | null>(null);
+  const [editingPoint, setEditingPoint] = useState<Point | null>(null);
+  const [selectedDrivers, setSelectedDrivers] = useState<number[]>([]);
+  const [newPoint, setNewPoint] = useState({
+    name: '',
+    address: '',
+    coordinates: '',
+    city: 'Рязань'
+  });
+
+  useEffect(() => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    
+    // Загружаем точки
+    fetch(`${apiUrl}/api/points`)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        setPoints(data || []);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Error fetching points:', err);
+        setLoading(false);
+      });
+
+    // Загружаем водителей
+    fetch(`${apiUrl}/api/drivers`)
+      .then(res => res.json())
+      .then(data => setDrivers(data || []))
+      .catch(err => console.error('Error fetching drivers:', err));
+  }, []);
+
+  const handleAddPoint = async () => {
+    if (!newPoint.name.trim() || !newPoint.coordinates.trim()) {
+      alert('Заполните название и координаты');
+      return;
+    }
+
+    const coords = newPoint.coordinates.split(',').map(c => c.trim());
+    if (coords.length !== 2) {
+      alert('Неверный формат координат. Используйте: 54.6269, 39.7464');
+      return;
+    }
+
+    const latitude = parseFloat(coords[0]);
+    const longitude = parseFloat(coords[1]);
+
+    if (isNaN(latitude) || isNaN(longitude)) {
+      alert('Координаты должны быть числами');
+      return;
+    }
+    
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      
+      if (editingPoint) {
+        // Редактирование
+        const response = await fetch(`${apiUrl}/api/points/${editingPoint.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: newPoint.name,
+            address: newPoint.address || `Точка ${newPoint.name}`,
+            latitude: latitude,
+            longitude: longitude,
+            city: newPoint.city,
+            driver_ids: selectedDrivers
+          }),
+        });
+
+        if (!response.ok) throw new Error('Failed to update point');
+
+        // Перезагружаем все точки
+        const pointsResponse = await fetch(`${apiUrl}/api/points`);
+        if (pointsResponse.ok) {
+          const updatedPoints = await pointsResponse.json();
+          setPoints(updatedPoints || []);
+        }
+      } else {
+        // Добавление
+        const response = await fetch(`${apiUrl}/api/points`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: newPoint.name,
+            address: newPoint.address || `Точка ${newPoint.name}`,
+            latitude: latitude,
+            longitude: longitude,
+            city: newPoint.city,
+            driver_ids: selectedDrivers
+          }),
+        });
+
+        if (!response.ok) throw new Error('Failed to create point');
+
+        // Перезагружаем все точки
+        const pointsResponse = await fetch(`${apiUrl}/api/points`);
+        if (pointsResponse.ok) {
+          const updatedPoints = await pointsResponse.json();
+          setPoints(updatedPoints || []);
+        }
+      }
+      
+      setShowModal(false);
+      setEditingPoint(null);
+      setSelectedDrivers([]);
+      setNewPoint({ name: '', address: '', coordinates: '', city: 'Рязань' });
+    } catch (err) {
+      console.error('Error saving point:', err);
+      alert('Ошибка сохранения точки');
+    }
+  };
+
+  const handleEditPoint = async (point: Point) => {
+    setEditingPoint(point);
+    setNewPoint({
+      name: point.name,
+      address: point.address,
+      coordinates: `${point.latitude}, ${point.longitude}`,
+      city: point.city
+    });
+    
+    // Загружаем водителей для этой точки
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/routes?point_id=${point.id}`);
+      if (response.ok) {
+        const routes = await response.json();
+        const driverIds = (routes || []).map((r: any) => r.driver_id);
+        setSelectedDrivers(driverIds);
+      } else {
+        setSelectedDrivers([]);
+      }
+    } catch (err) {
+      console.error('Error fetching point drivers:', err);
+      setSelectedDrivers([]);
+    }
+    
+    setShowModal(true);
+  };
+
+  const fetchAddressFromCoordinates = async (coordinates: string) => {
+    const coords = coordinates.split(',').map(c => c.trim());
+    if (coords.length !== 2) return;
+
+    const latitude = parseFloat(coords[0]);
+    const longitude = parseFloat(coords[1]);
+
+    if (isNaN(latitude) || isNaN(longitude)) return;
+
+    try {
+      const response = await fetch(
+        `https://geocode-maps.yandex.ru/1.x/?apikey=8deea7af-f681-4ac6-96b6-c6f2d7ac1ec7&geocode=${longitude},${latitude}&format=json&lang=ru_RU`
+      );
+      const data = await response.json();
+      
+      const geoObject = data.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
+      if (geoObject) {
+        const address = geoObject.metaDataProperty?.GeocoderMetaData?.text || '';
+        setNewPoint(prev => ({ ...prev, address }));
+      }
+    } catch (err) {
+      console.error('Error fetching address:', err);
+    }
+  };
+
+  const handleDeletePoint = async () => {
+    if (!deletingPointId) return;
+    
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/points/${deletingPointId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) throw new Error('Failed to delete point');
+
+      setPoints(points.filter(p => p.id !== deletingPointId));
+      setShowDeleteModal(false);
+      setDeletingPointId(null);
+    } catch (err) {
+      console.error('Error deleting point:', err);
+      alert('Ошибка удаления точки');
+    }
+  };
+
+  if (loading) {
+    return <div className="loading">Загрузка...</div>;
+  }
+
+  return (
+    <div>
+      <div className="header">
+        <button onClick={() => router.back()} style={{ position: 'absolute', left: '20px', background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', fontSize: '24px', cursor: 'pointer', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.3s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'} onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}>←</button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+          <img src="/logo.png" alt="Logo" style={{ width: '35px', height: '35px' }} />
+          <h1 style={{ margin: 0, fontSize: '24px' }}>Точки сбора</h1>
+        </div>
+        <p>{points.length} точек</p>
+      </div>
+      <div className="container">
+        {points.length === 0 ? (
+          <div className="card">
+            <p>Нет точек сбора</p>
+          </div>
+        ) : (
+          points.map(point => (
+            <div key={point.id} className="card" style={{ position: 'relative' }}>
+              <button
+                onClick={() => {
+                  setDeletingPointId(point.id);
+                  setShowDeleteModal(true);
+                }}
+                style={{
+                  position: 'absolute',
+                  top: '10px',
+                  right: '10px',
+                  background: '#F44336',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '30px',
+                  height: '30px',
+                  cursor: 'pointer',
+                  fontSize: '18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                ×
+              </button>
+              <button
+                onClick={() => handleEditPoint(point)}
+                style={{
+                  position: 'absolute',
+                  bottom: '10px',
+                  right: '10px',
+                  background: '#2196F3',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '30px',
+                  height: '30px',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                ✏️
+              </button>
+              <h3>{point.name}</h3>
+              <p style={{ color: '#666', margin: '5px 0' }}>{point.address}</p>
+              <p style={{ fontSize: '14px', color: '#999' }}>
+                📍 {point.latitude.toFixed(4)}, {point.longitude.toFixed(4)}
+              </p>
+              <p style={{ fontSize: '14px', color: '#999' }}>
+                🏙️ {point.city}
+              </p>
+              {point.drivers && point.drivers.length > 0 && (
+                <p style={{ fontSize: '14px', color: '#4CAF50', marginTop: '5px', fontWeight: 'bold' }}>
+                  👤 Водители: {point.drivers.join(', ')}
+                </p>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Кнопка добавления */}
+      <button
+        onClick={() => setShowModal(true)}
+        style={{
+          position: 'fixed',
+          bottom: '30px',
+          left: '30px',
+          width: '60px',
+          height: '60px',
+          borderRadius: '50%',
+          background: '#4CAF50',
+          color: 'white',
+          border: 'none',
+          fontSize: '32px',
+          cursor: 'pointer',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}
+      >
+        +
+      </button>
+
+      {/* Модальное окно */}
+      {showModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000
+          }}
+          onClick={() => setShowModal(false)}
+        >
+          <div
+            style={{
+              background: 'white',
+              padding: '30px',
+              borderRadius: '12px',
+              width: '90%',
+              maxWidth: '500px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.2)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginBottom: '20px' }}>{editingPoint ? 'Редактировать точку' : 'Добавить точку сбора'}</h2>
+            <input
+              type="text"
+              placeholder="Название *"
+              value={newPoint.name}
+              onChange={(e) => setNewPoint({...newPoint, name: e.target.value})}
+              style={{
+                width: '100%',
+                padding: '12px',
+                fontSize: '16px',
+                border: '2px solid #ddd',
+                borderRadius: '8px',
+                marginBottom: '15px',
+                boxSizing: 'border-box'
+              }}
+            />
+            <input
+              type="text"
+              placeholder="Адрес заполняется по координатам"
+              value={newPoint.address}
+              onChange={(e) => setNewPoint({...newPoint, address: e.target.value})}
+              style={{
+                width: '100%',
+                padding: '12px',
+                fontSize: '14px',
+                border: '2px solid #ddd',
+                borderRadius: '8px',
+                marginBottom: '15px',
+                boxSizing: 'border-box'
+              }}
+            />
+            <input
+              type="text"
+              placeholder="Координаты (54.6269, 39.7464)"
+              value={newPoint.coordinates}
+              onChange={(e) => setNewPoint({...newPoint, coordinates: e.target.value})}
+              onBlur={(e) => {
+                if (e.target.value.trim() && !newPoint.address) {
+                  fetchAddressFromCoordinates(e.target.value);
+                }
+              }}
+              style={{
+                width: '100%',
+                padding: '12px',
+                fontSize: '14px',
+                border: '2px solid #ddd',
+                borderRadius: '8px',
+                marginBottom: '15px',
+                boxSizing: 'border-box'
+              }}
+            />
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Водители (необязательно)</label>
+              <div style={{ border: '2px solid #ddd', borderRadius: '8px', padding: '10px', maxHeight: '150px', overflowY: 'auto' }}>
+                {drivers.map(driver => (
+                  <label key={driver.id} style={{ display: 'block', padding: '5px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedDrivers.includes(driver.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedDrivers([...selectedDrivers, driver.id]);
+                        } else {
+                          setSelectedDrivers(selectedDrivers.filter(id => id !== driver.id));
+                        }
+                      }}
+                      style={{ marginRight: '8px' }}
+                    />
+                    {driver.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={handleAddPoint}
+                className="btn"
+                style={{
+                  flex: 1,
+                  background: '#4CAF50',
+                  color: 'white',
+                  padding: '12px',
+                  fontSize: '16px'
+                }}
+              >
+                {editingPoint ? 'Сохранить' : 'Добавить'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowModal(false);
+                  setEditingPoint(null);
+                  setSelectedDrivers([]);
+                  setNewPoint({ name: '', address: '', coordinates: '', city: 'Рязань' });
+                }}
+                className="btn"
+                style={{
+                  flex: 1,
+                  background: '#9E9E9E',
+                  color: 'white',
+                  padding: '12px',
+                  fontSize: '16px'
+                }}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно удаления */}
+      {showDeleteModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000
+          }}
+          onClick={() => setShowDeleteModal(false)}
+        >
+          <div
+            style={{
+              background: 'white',
+              padding: '30px',
+              borderRadius: '12px',
+              width: '90%',
+              maxWidth: '400px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.2)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginBottom: '20px' }}>Удалить точку?</h2>
+            <p style={{ marginBottom: '20px', color: '#666' }}>Это действие нельзя отменить.</p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={handleDeletePoint}
+                className="btn"
+                style={{
+                  flex: 1,
+                  background: '#F44336',
+                  color: 'white',
+                  padding: '12px',
+                  fontSize: '16px'
+                }}
+              >
+                Удалить
+              </button>
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeletingPointId(null);
+                }}
+                className="btn"
+                style={{
+                  flex: 1,
+                  background: '#9E9E9E',
+                  color: 'white',
+                  padding: '12px',
+                  fontSize: '16px'
+                }}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+//frontend\app\driver\[id]\page.tsx
+'use client';
+
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { useParams } from 'next/navigation';
+import dynamic from 'next/dynamic';
+import { useGeolocation } from './hooks/useGeolocation';
+import { useRoutes } from './hooks/useRoutes';
+import { useTileCache } from './hooks/useTileCache';
+import { getStatusText, getStatusColor } from './utils/statusHelpers';
+
+// Динамический импорт Leaflet (избегаем SSR проблем)
+const MapContainer = dynamic(
+  () => import('./components/Map').then(mod => mod.Map),
+  { ssr: false, loading: () => <div className="loading">Загрузка карты...</div> }
+);
+
+interface Route {
+  id: number;
+  order_number: number;
+  scheduled_at: string;
+  status: string;
+  point: {
+    name: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+  };
+}
+
+export default function DriverPage() {
+  const params = useParams();
+  const [showModal, setShowModal] = useState(false);
+  const [followMode, setFollowMode] = useState(true);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const mapRef = useRef<any>(null);
+
+  const { userLocation, error: geoError, requestGeolocation } = useGeolocation();
+  const { data, loading, updateStatus, refresh } = useRoutes(params.id);
+  const {
+    cacheProgress,
+    isCaching,
+    startCaching,
+    cachedTilesCount,
+    isOnline: cacheIsOnline
+  } = useTileCache();
+
+  // Проверка онлайн/оффлайн статуса
+  useEffect(() => {
+    const updateOnlineStatus = () => setIsOnline(navigator.onLine);
+    updateOnlineStatus();
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    return () => {
+      window.removeEventListener('online', updateOnlineStatus);
+      window.removeEventListener('offline', updateOnlineStatus);
+    };
+  }, []);
+
+  // Авто-кэширование при загрузке маршрута (без модального окна)
+  useEffect(() => {
+    if (data?.routes && data.routes.length > 0 && navigator.onLine) {
+      const points = data.routes.map(r => ({
+        lat: r.point.latitude,
+        lon: r.point.longitude,
+        name: r.point.name
+      }));
+      startCaching(points, 500);
+    }
+  }, [data?.routes, startCaching]);
+
+  // Запрос геолокации при загрузке
+  useEffect(() => {
+    requestGeolocation();
+  }, [requestGeolocation]);
+
+  const zoomIn = () => {
+    if (mapRef.current) {
+      mapRef.current.zoomIn();
+    }
+  };
+
+  const zoomOut = () => {
+    if (mapRef.current) {
+      mapRef.current.zoomOut();
+    }
+  };
+
+  const centerOnUser = () => {
+    if (mapRef.current && userLocation) {
+      mapRef.current.setView([userLocation.lat, userLocation.lon], 17);
+      setFollowMode(true);
+    }
+  };
+
+  if (loading) {
+    return <div className="loading">Загрузка маршрутов...</div>;
+  }
+
+  if (!data) {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        background: '#f5f5f5',
+        padding: '20px'
+      }}>
+        <h2>Нет данных</h2>
+        <button onClick={() => window.location.reload()} className="btn btn-primary">Повторить</button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Header */}
+        <div
+          style={{
+            padding: '12px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            color: 'white',
+            background: 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+            position: 'sticky',
+            top: 0,
+            zIndex: 100,
+          }}
+        >
+          <button
+            onClick={() => window.history.back()}
+            style={{
+              background: 'rgba(255,255,255,0.2)',
+              border: 'none',
+              color: 'white',
+              fontSize: '26px',
+              cursor: 'pointer',
+              borderRadius: '50%',
+              width: '44px',
+              height: '44px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            ←
+          </button>
+          <div style={{ textAlign: 'center', flex: 1, margin: '0 15px' }}>
+            <h2 style={{ margin: '0 0 4px 0', fontSize: '1.5rem', fontWeight: '600' }}>
+              {data?.driver?.name || 'Водитель'}
+            </h2>
+            <p style={{ margin: 0, fontSize: '0.95rem', opacity: 0.9 }}>
+              📍 {data?.routes?.length || 0} точек
+            </p>
+          </div>
+          <button
+            onClick={refresh}
+            style={{
+              background: 'rgba(255,255,255,0.2)',
+              border: 'none',
+              color: 'white',
+              fontSize: '24px',
+              cursor: 'pointer',
+              borderRadius: '50%',
+              width: '44px',
+              height: '44px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            ↻
+          </button>
+        </div>
+
+        {/* Карта */}
+        <div style={{ flex: 1, position: 'relative' }}>
+          <MapContainer
+            ref={mapRef}
+            routes={data?.routes || []}
+            userLocation={userLocation}
+            followMode={followMode}
+            onStatusUpdate={updateStatus}
+            getStatusText={getStatusText}
+            getStatusColor={getStatusColor}
+          />
+
+          {/* Индикатор онлайн/оффлайн и слежения - справа вверху */}
+          <div style={{
+            position: 'fixed',
+            top: '80px',
+            right: '20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            background: 'rgba(0,0,0,0.7)',
+            padding: '8px 12px',
+            borderRadius: '20px',
+            zIndex: 900,
+            backdropFilter: 'blur(4px)',
+          }}>
+            {/* Индикатор онлайн/оффлайн */}
+            <div style={{
+              width: '12px',
+              height: '12px',
+              borderRadius: '50%',
+              background: isOnline ? '#4CAF50' : '#F44336',
+              boxShadow: isOnline ? '0 0 8px #4CAF50' : '0 0 8px #F44336',
+              transition: 'background 0.3s',
+            }} title={isOnline ? 'Онлайн' : 'Оффлайн'} />
+            
+            {/* Индикатор слежения */}
+            <div style={{
+              width: '12px',
+              height: '12px',
+              borderRadius: '50%',
+              background: followMode ? '#F44336' : '#9E9E9E',
+              boxShadow: followMode ? '0 0 8px #F44336' : 'none',
+              transition: 'background 0.3s',
+            }} title={followMode ? 'Слежение включено' : 'Слежение выключено'} />
+          </div>
+
+          {/* Кнопка слежения */}
+          <div style={{
+            position: 'fixed',
+            right: '20px',
+            top: 'calc(50% + 70px)',
+            zIndex: 1000,
+          }}>
+            <button
+              onClick={() => {
+                if (!followMode) {
+                  setFollowMode(true);
+                  centerOnUser();
+                } else {
+                  setFollowMode(false);
+                }
+              }}
+              className={`map-control-btn ${followMode ? 'pulse-animation' : ''}`}
+              style={{
+                background: followMode ? '#F44336' : '#9E9E9E',
+                color: 'white',
+                border: followMode ? '3px solid #ffffff' : 'none',
+              }}
+            >
+              🎯
+            </button>
+          </div>
+
+          {/* Прогресс кэширования (только если идет загрузка) */}
+          {isCaching && cacheProgress && (
+            <div className="cache-progress" style={{
+              position: 'fixed',
+              bottom: '100px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: 'rgba(0,0,0,0.8)',
+              color: 'white',
+              padding: '15px 25px',
+              borderRadius: '12px',
+              zIndex: 9999,
+              minWidth: '300px',
+              backdropFilter: 'blur(4px)',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                <span>Кэш: {cacheProgress.current}/{cacheProgress.total}</span>
+                <span>{Math.round((cacheProgress.current / cacheProgress.total) * 100)}%</span>
+              </div>
+              <div className="cache-progress-bar">
+                <div
+                  className="cache-progress-fill"
+                  style={{ width: `${(cacheProgress.current / cacheProgress.total) * 100}%` }}
+                />
+              </div>
+              <p style={{ marginTop: '10px', fontSize: '12px', color: '#aaa' }}>
+                Закэшировано тайлов: {cachedTilesCount}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Кнопка списка маршрутов */}
+        <button
+          onClick={() => setShowModal(true)}
+          style={{
+            position: 'fixed',
+            bottom: '30px',
+            right: '30px',
+            width: '60px',
+            height: '60px',
+            borderRadius: '50%',
+            background: '#4CAF50',
+            color: 'white',
+            border: 'none',
+            fontSize: '24px',
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          📋
+        </button>
+
+        {/* Модальное окно списка маршрутов */}
+        {showModal && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0,0,0,0.5)',
+              display: 'flex',
+              alignItems: 'flex-end',
+              justifyContent: 'flex-end',
+              zIndex: 2000,
+              padding: '20px',
+            }}
+            onClick={() => setShowModal(false)}
+          >
+            <div
+              style={{
+                background: 'white',
+                borderRadius: '12px',
+                width: '400px',
+                maxHeight: '80vh',
+                overflow: 'auto',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                style={{
+                  padding: '20px',
+                  borderBottom: '1px solid #ddd',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  position: 'sticky',
+                  top: 0,
+                  background: 'white',
+                  zIndex: 1,
+                }}
+              >
+                <h2 style={{ margin: 0 }}>Список точек</h2>
+                <button onClick={() => setShowModal(false)} style={{ background: 'transparent', border: 'none', fontSize: '24px', cursor: 'pointer' }}>×</button>
+              </div>
+              <div style={{ padding: '5px' }}>
+                {data?.routes && data.routes.length > 0 ? (
+                  data.routes.map((route) => (
+                    <div
+                      key={route.id}
+                      style={{
+                        padding: '15px',
+                        margin: '10px',
+                        background: '#f9f9f9',
+                        borderRadius: '8px',
+                        borderLeft: `4px solid ${getStatusColor(route.status)}`,
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '10px' }}>
+                        <div style={{ flex: 1 }}>
+                          <h3 style={{ margin: '0 0 5px 0', fontSize: '16px' }}>#{route.order_number} {route.point.name}</h3>
+                          <p style={{ color: '#666', margin: '0', fontSize: '14px' }}>{route.point.address}</p>
+                        </div>
+                        <div
+                          style={{
+                            padding: '3px 10px',
+                            borderRadius: '12px',
+                            background: getStatusColor(route.status),
+                            color: 'white',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                            whiteSpace: 'nowrap',
+                            marginLeft: '10px',
+                          }}
+                        >
+                          {getStatusText(route.status)}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                        <button
+                          onClick={() => updateStatus(route.id, 'in_progress')}
+                          style={{ padding: '5px 10px', background: '#2196F3', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '12px' }}
+                        >
+                          В процессе
+                        </button>
+                        <button
+                          onClick={() => updateStatus(route.id, 'completed')}
+                          style={{ padding: '5px 10px', background: '#4CAF50', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '12px' }}
+                        >
+                          Завершено
+                        </button>
+                        <button
+                          onClick={() => updateStatus(route.id, 'problem')}
+                          style={{ padding: '5px 10px', background: '#F44336', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '12px' }}
+                        >
+                          Проблема
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>Нет точек для отображения</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+'use client';
+
+import RouteCard from './RouteCard';
+
+interface Route {
+  id: number;
+  order_number: number;
+  scheduled_at: string;
+  status: string;
+  point: {
+    name: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface RoutesListProps {
+  routes: Route[];
+  isOpen: boolean;
+  onClose: () => void;
+  onStatusChange: (routeId: number, status: string) => void;
+}
+
+export default function RoutesList({
+  routes,
+  isOpen,
+  onClose,
+  onStatusChange,
+}: RoutesListProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'flex-end',
+        zIndex: 2000,
+        padding: '20px',
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: 'white',
+          borderRadius: '12px',
+          width: '400px',
+          maxHeight: '80vh',
+          overflow: 'auto',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          style={{
+            padding: '20px',
+            borderBottom: '1px solid #ddd',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            position: 'sticky',
+            top: 0,
+            background: 'white',
+            zIndex: 1,
+          }}
+        >
+          <h2 style={{ margin: 0 }}>Список точек</h2>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              fontSize: '24px',
+              cursor: 'pointer',
+            }}
+          >
+            ×
+          </button>
+        </div>
+        <div style={{ padding: '5px' }}>
+          {routes && routes.length > 0 ? (
+            routes.map((route) => (
+              <RouteCard
+                key={route.id}
+                route={route}
+                onStatusChange={onStatusChange}
+              />
+            ))
+          ) : (
+            <div
+              style={{
+                padding: '20px',
+                textAlign: 'center',
+                color: '#666',
+              }}
+            >
+              Нет точек для отображения
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+import { useState } from 'react';
+import { getStatusColor, getStatusText } from '../../utils/statusHelpers';
+
+interface Route {
+  id: number;
+  order_number: number;
+  scheduled_at: string;
+  status: string;
+  point: {
+    name: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface RouteCardProps {
+  route: Route;
+  onStatusChange: (routeId: number, status: string) => void;
+}
+
+export default function RouteCard({ route, onStatusChange }: RouteCardProps) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleStatusChange = async (status: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await onStatusChange(route.id, status);
+    } catch (err) {
+      setError(`Ошибка: ${err instanceof Error ? err.message : 'Неизвестная ошибка'}`);
+      setIsLoading(false);
+    }
+    setIsLoading(false);
+  };
+  return (
+    <div
+      style={{
+        padding: '15px',
+        margin: '10px 0',
+        background: '#f9f9f9',
+        borderRadius: '8px',
+        borderLeft: `4px solid ${getStatusColor(route.status)}`,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'start',
+          marginBottom: '10px',
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <h3 style={{ margin: '0 0 5px 0', fontSize: '16px' }}>
+            #{route.order_number} {route.point.name}
+          </h3>
+          <p style={{ color: '#666', margin: '0', fontSize: '14px' }}>
+            {route.point.address}
+          </p>
+        </div>
+        <div
+          style={{
+            padding: '3px 10px',
+            borderRadius: '12px',
+            background: getStatusColor(route.status),
+            color: 'white',
+            fontSize: '12px',
+            fontWeight: 'bold',
+            whiteSpace: 'nowrap',
+            marginLeft: '10px',
+          }}
+        >
+          {getStatusText(route.status)}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+        <button
+          onClick={() => handleStatusChange('in_progress')}
+          disabled={isLoading}
+          style={{
+            padding: '5px 10px',
+            background: '#2196F3',
+            color: 'white',
+            border: 'none',
+            borderRadius: '5px',
+            cursor: isLoading ? 'not-allowed' : 'pointer',
+            fontSize: '12px',
+            opacity: isLoading ? 0.6 : 1,
+          }}
+        >
+          {isLoading ? 'Загрузка...' : 'В процессе'}
+        </button>
+        <button
+          onClick={() => handleStatusChange('completed')}
+          disabled={isLoading}
+          style={{
+            padding: '5px 10px',
+            background: '#4CAF50',
+            color: 'white',
+            border: 'none',
+            borderRadius: '5px',
+            cursor: isLoading ? 'not-allowed' : 'pointer',
+            fontSize: '12px',
+            opacity: isLoading ? 0.6 : 1,
+          }}
+        >
+          {isLoading ? 'Загрузка...' : 'Завершено'}
+        </button>
+        <button
+          onClick={() => handleStatusChange('problem')}
+          disabled={isLoading}
+          style={{
+            padding: '5px 10px',
+            background: '#F44336',
+            color: 'white',
+            border: 'none',
+            borderRadius: '5px',
+            cursor: isLoading ? 'not-allowed' : 'pointer',
+            fontSize: '12px',
+            opacity: isLoading ? 0.6 : 1,
+          }}
+        >
+          {isLoading ? 'Загрузка...' : 'Проблема'}
+        </button>
+      </div>
+      {error && (
+        <div
+          style={{
+            color: '#F44336',
+            fontSize: '12px',
+            marginTop: '10px',
+            padding: '8px',
+            background: '#ffebee',
+            borderRadius: '4px',
+          }}
+        >
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// C:\Users\Dmitry\Desktop\garbage_ruck\frontend\app\driver\[id]\components\DriverHeader.tsx
+'use client';
+
+import { useRouter } from 'next/navigation';
+
+interface DriverHeaderProps {
+  driverName: string;
+  routeCount: number;
+  lastUpdate?: string; // Добавляем опциональное время последнего обновления
+}
+
+export default function DriverHeader({
+  driverName,
+  routeCount,
+  lastUpdate,
+}: DriverHeaderProps) {
+  const router = useRouter();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    window.location.reload();
+    // Или если используете SWR/React Query:
+    // mutate();
+  };
+
+  const formatTime = (dateString?: string) => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleTimeString('ru-RU', { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+    } catch {
+      return '';
+    }
+  };
+
+  return (
+    <div
+      style={{
+        padding: '12px 20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        color: 'white',
+        background: 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+        position: 'sticky',
+        top: 0,
+        zIndex: 100,
+      }}
+    >
+      <button
+        onClick={() => router.back()}
+        aria-label="Назад"
+        style={{
+          background: 'rgba(255,255,255,0.2)',
+          border: 'none',
+          color: 'white',
+          fontSize: '26px',
+          cursor: 'pointer',
+          borderRadius: '50%',
+          width: '44px',
+          height: '44px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'background 0.3s',
+          outline: 'none',
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'}
+        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+      >
+        ←
+      </button>
+
+      <div style={{ 
+        textAlign: 'center',
+        flex: 1,
+        margin: '0 15px'
+      }}>
+        <h2 style={{ 
+          margin: '0 0 4px 0', 
+          fontSize: '1.5rem',
+          fontWeight: '600',
+          lineHeight: '1.2'
+        }}>
+          {driverName || 'Водитель'}
+        </h2>
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          gap: '8px',
+          flexWrap: 'wrap'
+        }}>
+          <p style={{ 
+            margin: 0, 
+            fontSize: '0.95rem', 
+            opacity: 0.9,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}>
+            <span style={{ fontSize: '18px' }}>📍</span> 
+            {routeCount} {getRouteWord(routeCount)}
+          </p>
+          {lastUpdate && (
+            <p style={{ 
+              margin: 0, 
+              fontSize: '0.85rem', 
+              opacity: 0.8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}>
+              <span style={{ fontSize: '14px' }}>🕐</span>
+              {formatTime(lastUpdate)}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <button
+        onClick={handleRefresh}
+        disabled={isRefreshing}
+        aria-label="Обновить данные"
+        title="Обновить маршруты"
+        style={{
+          background: 'rgba(255,255,255,0.2)',
+          border: 'none',
+          color: 'white',
+          fontSize: '24px',
+          cursor: isRefreshing ? 'not-allowed' : 'pointer',
+          padding: '10px',
+          borderRadius: '50%',
+          width: '44px',
+          height: '44px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'background 0.3s, transform 0.3s',
+          animation: isRefreshing ? 'spin 1s linear infinite' : 'none',
+          outline: 'none',
+        }}
+        onMouseEnter={(e) => !isRefreshing && (e.currentTarget.style.background = 'rgba(255,255,255,0.3)')}
+        onMouseLeave={(e) => !isRefreshing && (e.currentTarget.style.background = 'rgba(255,255,255,0.2)')}
+      >
+        ↻
+      </button>
+
+      <style jsx>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// Вспомогательная функция для склонения слова "точка"
+function getRouteWord(count: number): string {
+  const lastDigit = count % 10;
+  const lastTwoDigits = count % 100;
+
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
+    return 'точек';
+  }
+  if (lastDigit === 1) {
+    return 'точка';
+  }
+  if (lastDigit >= 2 && lastDigit <= 4) {
+    return 'точки';
+  }
+  return 'точек';
+}
+
+// Добавляем useState, если его нет
+import { useState } from 'react';
+
+import DriverHeader from './DriverHeader';
+import Map from './Map';
+import RoutesList from './RoutesList';
+
+export { DriverHeader, Map, RoutesList };
+
+//frontend\app\driver\[id]\components\Map.tsx
+'use client';
+
+import { forwardRef, useEffect, useRef } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Фикс для иконок Leaflet в Next.js
+if (typeof window !== 'undefined') {
+  delete (L.Icon.Default.prototype as any)._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+    iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  });
+}
+
+interface Route {
+  id: number;
+  order_number: number;
+  status: string;
+  point: {
+    name: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface MapProps {
+  routes: Route[];
+  userLocation: { lat: number; lon: number } | null;
+  followMode: boolean;
+  onStatusUpdate?: (routeId: number, status: string) => void;
+  getStatusText: (status: string) => string;
+  getStatusColor: (status: string) => string;
+}
+
+// Компонент для обновления вида карты
+function MapUpdater({ 
+  userLocation, 
+  followMode 
+}: { 
+  userLocation: { lat: number; lon: number } | null;
+  followMode: boolean;
+}) {
+  const map = useMap();
+  const lastLocationRef = useRef<{ lat: number; lon: number } | null>(null);
+
+  useEffect(() => {
+    if (!userLocation || !followMode) return;
+
+    const locationChanged = !lastLocationRef.current ||
+      Math.abs(lastLocationRef.current.lat - userLocation.lat) > 0.0001 ||
+      Math.abs(lastLocationRef.current.lon - userLocation.lon) > 0.0001;
+
+    if (locationChanged) {
+      map.flyTo([userLocation.lat, userLocation.lon], 17, { duration: 0.5 });
+      lastLocationRef.current = userLocation;
+    }
+  }, [userLocation, followMode, map]);
+
+  return null;
+}
+
+// Экспортируем компонент карты
+export const Map = forwardRef<L.Map | null, MapProps>(
+  ({ routes, userLocation, followMode, getStatusText, getStatusColor }, ref) => {
+    const defaultCenter: [number, number] = [54.70, 39.79];
+    const center = userLocation
+      ? [userLocation.lat, userLocation.lon]
+      : routes.length > 0
+      ? [routes[0].point.latitude, routes[0].point.longitude]
+      : defaultCenter;
+
+    const mapRef = useRef<L.Map | null>(null);
+
+    useEffect(() => {
+      if (mapRef.current && ref) {
+        (ref as any).current = mapRef.current;
+      }
+    }, [ref]);
+
+    // Кастомная иконка для статусов
+    const getCustomIcon = (status: string) => {
+      const color = getStatusColor(status);
+      return new L.DivIcon({
+        className: 'custom-marker',
+        html: `<div style="
+          background: ${color};
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          border: 3px solid white;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          font-weight: bold;
+          font-size: 14px;
+        "></div>`,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15],
+      });
+    };
+
+    return (
+      <MapContainer
+        center={center}
+        zoom={12}
+        style={{ width: '100%', height: '100%' }}
+        whenCreated={(mapInstance) => {
+          mapRef.current = mapInstance;
+          if (ref) {
+            (ref as any).current = mapInstance;
+          }
+        }}
+      >
+        {/* OSM тайлы */}
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          maxZoom={19}
+        />
+
+        {/* Обновление вида карты */}
+        <MapUpdater userLocation={userLocation} followMode={followMode} />
+
+        {/* Метки точек маршрута */}
+        {routes.map((route) => (
+          <Marker
+            key={route.id}
+            position={[route.point.latitude, route.point.longitude]}
+            icon={getCustomIcon(route.status)}
+          >
+            <Popup>
+              <div style={{ minWidth: '220px' }}>
+                <strong style={{ fontSize: '16px' }}>
+                  #{route.order_number} {route.point.name}
+                </strong>
+                <br />
+                <span style={{ color: '#666', fontSize: '13px' }}>
+                  {route.point.address}
+                </span>
+                <div style={{ marginTop: '8px', padding: '5px', background: '#f5f5f5', borderRadius: '4px' }}>
+                  Статус:{' '}
+                  <strong style={{ color: getStatusColor(route.status) }}>
+                    {getStatusText(route.status)}
+                  </strong>
+                </div>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+
+        {/* Метка пользователя */}
+        {userLocation && (
+          <Marker
+            position={[userLocation.lat, userLocation.lon]}
+            icon={new L.DivIcon({
+              className: 'user-marker',
+              html: `<div style="
+                background: #F44336;
+                width: 20px;
+                height: 20px;
+                border-radius: 50%;
+                border: 3px solid white;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                animation: pulse 2s infinite;
+              "></div>
+              <style>
+                @keyframes pulse {
+                  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7); }
+                  70% { transform: scale(1.2); box-shadow: 0 0 0 10px rgba(244, 67, 54, 0); }
+                  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0); }
+                }
+              </style>`,
+              iconSize: [20, 20],
+              iconAnchor: [10, 10],
+            })}
+          >
+            <Popup>📍 Ваше местоположение</Popup>
+          </Marker>
+        )}
+      </MapContainer>
+    );
+  }
+);
+
+Map.displayName = 'Map';
+
+import { useGeolocation } from './useGeolocation';
+import { useRoutes } from './useRoutes';
+import { useMapManager } from './useMapManager';
+
+export { useGeolocation, useRoutes, useMapManager };
+
+//frontend\app\driver\[id]\hooks\useGeolocation.ts
+import { useState, useCallback } from 'react';
+
+export const useGeolocation = () => {
+  const [userLocation, setUserLocation] = useState<{ lat: number; lon: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isWatching, setIsWatching] = useState(false);
+
+  const requestGeolocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setUserLocation({
+        lat: 54.609188,
+        lon: 39.666385,
+      });
+      setError('Geolocation not supported');
+      return;
+    }
+
+    setIsWatching(true);
+
+    // Получаем одноразовую позицию
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+        });
+        setError(null);
+      },
+      (error) => {
+        console.warn('Geolocation error:', error.message);
+        // Не устанавливаем fallback сразу, даём пользователю возможность разрешить доступ
+        setError(error.message);
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 10000,
+        maximumAge: 0,
+      }
+    );
+
+    // Затем начинаем отслеживание
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        setUserLocation({
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+        });
+        setError(null);
+      },
+      (error) => {
+        console.warn('Watch error:', error.message);
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 10000,
+        maximumAge: 5000,
+      }
+    );
+
+    return watchId;
+  }, []);
+
+  return { userLocation, error, requestGeolocation };
+};
+
+//frontend\app\driver\[id]\hooks\useRoutes.ts
+import { useEffect, useState } from 'react';
+
+interface Route {
+  id: number;
+  order_number: number;
+  scheduled_at: string;
+  status: string;
+  point: {
+    name: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface Driver {
+  id: number;
+  name: string;
+}
+
+interface RoutesResponse {
+  driver: Driver;
+  routes: Route[];
+}
+
+export const useRoutes = (driverId: string | string[] | undefined) => {
+  const [data, setData] = useState<RoutesResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = () => {
+    if (!driverId) return;
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    fetch(`${apiUrl}/api/routes?driver_id=${driverId}`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json();
+      })
+      .then((responseData) => {
+        setData(responseData);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error('Error fetching routes:', err);
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(() => {
+      if (navigator.onLine) {
+        fetchData();
+      }
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [driverId]);
+
+  const updateStatus = async (routeId: number, status: string) => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      const response = await fetch(
+        `${apiUrl}/api/routes/status?route_id=${routeId}&status=${status}`,
+        { method: 'POST' }
+      );
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Error updating status: ${response.status} ${errorText}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      if (data) {
+        setData({
+          ...data,
+          routes: data.routes.map((r) => (r.id === routeId ? { ...r, status } : r)),
+        });
+      }
+    } catch (err) {
+      console.error('Error updating status:', err);
+      throw err;
+    }
+  };
+
+  const refresh = () => {
+    if (navigator.onLine) {
+      fetchData();
+    }
+  };
+
+  return { data, loading, updateStatus, refresh };
+};
+
+//frontend\app\driver\[id]\hooks\useRoutes.ts
+import { useEffect, useState } from 'react';
+
+interface Route {
+  id: number;
+  order_number: number;
+  scheduled_at: string;
+  status: string;
+  point: {
+    name: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface Driver {
+  id: number;
+  name: string;
+}
+
+interface RoutesResponse {
+  driver: Driver;
+  routes: Route[];
+}
+
+export const useRoutes = (driverId: string | string[] | undefined) => {
+  const [data, setData] = useState<RoutesResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = () => {
+    if (!driverId) return;
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    fetch(`${apiUrl}/api/routes?driver_id=${driverId}`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json();
+      })
+      .then((responseData) => {
+        setData(responseData);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error('Error fetching routes:', err);
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(() => {
+      if (navigator.onLine) {
+        fetchData();
+      }
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [driverId]);
+
+  const updateStatus = async (routeId: number, status: string) => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      const response = await fetch(
+        `${apiUrl}/api/routes/status?route_id=${routeId}&status=${status}`,
+        { method: 'POST' }
+      );
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Error updating status: ${response.status} ${errorText}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      if (data) {
+        setData({
+          ...data,
+          routes: data.routes.map((r) => (r.id === routeId ? { ...r, status } : r)),
+        });
+      }
+    } catch (err) {
+      console.error('Error updating status:', err);
+      throw err;
+    }
+  };
+
+  const refresh = () => {
+    if (navigator.onLine) {
+      fetchData();
+    }
+  };
+
+  return { data, loading, updateStatus, refresh };
+};
+
+//frontend\app\driver\[id]\hooks\useTileCache.ts
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { get, set, keys, del } from 'idb-keyval';
+
+interface CacheProgress {
+  current: number;
+  total: number;
+}
+
+interface Point {
+  lat: number;
+  lon: number;
+  name: string;
+}
+
+// Конвертация координат в тайлы
+const latLonToTile = (lat: number, lon: number, zoom: number) => {
+  const x = Math.floor((lon + 180) / 360 * Math.pow(2, zoom));
+  const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
+  return { x, y };
+};
+
+// Получение тайлов для области вокруг точки
+const getTilesForPoint = (lat: number, lon: number, radiusMeters: number, zoom: number) => {
+  const tiles: { x: number; y: number; z: number }[] = [];
+  const center = latLonToTile(lat, lon, zoom);
+  
+  const tilesPerDegree = Math.pow(2, zoom) / 360;
+  const radiusInTiles = Math.ceil((radiusMeters / 111000) * tilesPerDegree * 2);
+  
+  for (let x = center.x - radiusInTiles; x <= center.x + radiusInTiles; x++) {
+    for (let y = center.y - radiusInTiles; y <= center.y + radiusInTiles; y++) {
+      if (x >= 0 && y >= 0) {
+        tiles.push({ x, y, z: zoom });
+      }
+    }
+  }
+  
+  return tiles;
+};
+
+// URL тайла OSM
+const getTileUrl = (x: number, y: number, z: number) => {
+  const servers = ['a', 'b', 'c'];
+  const server = servers[Math.floor(Math.random() * servers.length)];
+  return `https://${server}.tile.openstreetmap.org/${z}/${x}/${y}.png`;
+};
+
+export const useTileCache = () => {
+  const [cacheProgress, setCacheProgress] = useState<CacheProgress | null>(null);
+  const [isCaching, setIsCaching] = useState(false);
+  const [cachedTilesCount, setCachedTilesCount] = useState(0);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const hasCachedRef = useRef(false);
+
+  // Проверка онлайн статуса
+  useEffect(() => {
+    const updateOnlineStatus = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    return () => {
+      window.removeEventListener('online', updateOnlineStatus);
+      window.removeEventListener('offline', updateOnlineStatus);
+    };
+  }, []);
+
+  // Подсчёт закэшированных тайлов
+  useEffect(() => {
+    const countCachedTiles = async () => {
+      try {
+        const allKeys = await keys();
+        const tileKeys = (allKeys as string[]).filter((key: string) => key.startsWith('tile-'));
+        setCachedTilesCount(tileKeys.length);
+        hasCachedRef.current = tileKeys.length > 100;
+      } catch (err) {
+        console.error('Error counting cached tiles:', err);
+      }
+    };
+    countCachedTiles();
+  }, [cacheProgress]);
+
+  // Загрузка тайла
+  const fetchTile = async (url: string, signal: AbortSignal) => {
+    const response = await fetch(url, { signal });
+    if (!response.ok) throw new Error(`Failed to fetch tile: ${response.status}`);
+    return await response.blob();
+  };
+
+  // Кэширование тайлов
+  const cacheTile = async (x: number, y: number, z: number, signal: AbortSignal) => {
+    const url = getTileUrl(x, y, z);
+    const cacheKey = `tile-${z}-${x}-${y}`;
+    
+    try {
+      const cached = await get(cacheKey);
+      if (cached) return false;
+      
+      const blob = await fetchTile(url, signal);
+      await set(cacheKey, blob);
+      return true;
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        throw err;
+      }
+      console.warn(`Failed to cache tile ${z}/${x}/${y}:`, err);
+      return false;
+    }
+  };
+
+  // Начало кэширования
+  const startCaching = useCallback(async (points: Point[], radiusMeters: number = 500) => {
+    // Не кэшируем если уже есть кэш или нет интернета
+    if (hasCachedRef.current) {
+      console.log('✅ Кэш уже загружен, пропускаем');
+      return;
+    }
+
+    if (!navigator.onLine) {
+      console.log('⚠️ Нет интернета, кэширование отложено');
+      return;
+    }
+
+    setIsCaching(true);
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
+    try {
+      const allTiles = new Set<string>();
+      
+      const centerLat = points.reduce((sum, p) => sum + p.lat, 0) / points.length;
+      const centerLon = points.reduce((sum, p) => sum + p.lon, 0) / points.length;
+      
+      // Зум 11-13: вся область
+      for (let z = 11; z <= 13; z++) {
+        const tiles = getTilesForPoint(centerLat, centerLon, 20000, z);
+        tiles.forEach(t => allTiles.add(`${t.z}-${t.x}-${t.y}`));
+      }
+
+      // Зум 14-15: дороги между посёлками
+      for (let z = 14; z <= 15; z++) {
+        points.forEach(p => {
+          const tiles = getTilesForPoint(p.lat, p.lon, 2000, z);
+          tiles.forEach(t => allTiles.add(`${t.z}-${t.x}-${t.y}`));
+        });
+      }
+
+      // Зум 16-17: 500м вокруг каждой точки
+      for (let z = 16; z <= 17; z++) {
+        points.forEach(p => {
+          const tiles = getTilesForPoint(p.lat, p.lon, radiusMeters, z);
+          tiles.forEach(t => allTiles.add(`${t.z}-${t.x}-${t.y}`));
+        });
+      }
+
+      const tilesArray = Array.from(allTiles).map(s => {
+        const [z, x, y] = s.split('-').map(Number);
+        return { x, y, z };
+      });
+
+      setCacheProgress({ current: 0, total: tilesArray.length });
+
+      let successCount = 0;
+      for (let i = 0; i < tilesArray.length; i++) {
+        if (signal.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+
+        const tile = tilesArray[i];
+        const cached = await cacheTile(tile.x, tile.y, tile.z, signal);
+        if (cached) successCount++;
+
+        setCacheProgress({ current: i + 1, total: tilesArray.length });
+
+        if (i % 10 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+      }
+
+      console.log(`✅ Закэшировано ${successCount} из ${tilesArray.length} тайлов`);
+      hasCachedRef.current = true;
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        console.error('Caching error:', err);
+      }
+    } finally {
+      setIsCaching(false);
+      setCacheProgress(null);
+      abortControllerRef.current = null;
+    }
+  }, []);
+
+  // Отмена кэширования
+  const cancelCaching = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setIsCaching(false);
+    setCacheProgress(null);
+  }, []);
+
+  // Очистка кэша
+  const clearCache = useCallback(async () => {
+    try {
+      const allKeys = await keys();
+      const tileKeys = (allKeys as string[]).filter((key: string) => key.startsWith('tile-'));
+      await Promise.all(tileKeys.map((key: string) => del(key)));
+      setCachedTilesCount(0);
+      hasCachedRef.current = false;
+    } catch (err) {
+      console.error('Error clearing cache:', err);
+    }
+  }, []);
+
+  return {
+    cacheProgress,
+    isCaching,
+    startCaching,
+    cancelCaching,
+    clearCache,
+    cachedTilesCount,
+    isOnline,
+  };
+};
+
+
+export const formatDuration = (seconds: number): string => {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+
+  if (hours > 0) {
+    return `${hours}ч ${minutes}м`;
+  }
+  return `${minutes}м`;
+};
+
+
+//frontend\app\driver\[id]\utils\statusHelpers.ts
+export const getStatusColor = (status: string): string => {
+  switch (status) {
+    case 'completed':
+      return '#4CAF50';
+    case 'in_progress':
+      return '#2196F3';
+    case 'pending':
+      return '#FFC107';
+    case 'skipped':
+      return '#9E9E9E';
+    case 'problem':
+      return '#F44336';
+    default:
+      return '#666';
+  }
+};
+
+export const getStatusText = (status: string): string => {
+  switch (status) {
+    case 'completed':
+      return 'Завершено';
+    case 'in_progress':
+      return 'В процессе';
+    case 'pending':
+      return 'Ожидает';
+    case 'skipped':
+      return 'Пропущено';
+    case 'problem':
+      return 'Проблема';
+    default:
+      return status;
+  }
+};
+
+export const formatDuration = (seconds: number): string => {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) {
+    return `${hours}ч ${minutes}м`;
+  }
+  return `${minutes}м`;
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

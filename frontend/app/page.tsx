@@ -1,3 +1,4 @@
+//frontend\app\page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -38,40 +39,27 @@ export default function Home() {
 
   const handleAddDriver = async () => {
     if (!newDriverName.trim()) return;
-    
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-      
       if (editingDriver) {
-        // Редактирование
         const response = await fetch(`${apiUrl}/api/drivers/${editingDriver.id}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: newDriverName }),
         });
-
         if (!response.ok) throw new Error('Failed to update driver');
-
         const updatedDriver = await response.json();
         setDrivers(drivers.map(d => d.id === editingDriver.id ? updatedDriver : d));
       } else {
-        // Добавление
         const response = await fetch(`${apiUrl}/api/drivers`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: newDriverName }),
         });
-
         if (!response.ok) throw new Error('Failed to create driver');
-
         const newDriver = await response.json();
         setDrivers([...drivers, newDriver]);
       }
-      
       setShowModal(false);
       setEditingDriver(null);
       setNewDriverName('');
@@ -83,15 +71,12 @@ export default function Home() {
 
   const handleDeleteDriver = async () => {
     if (!deletingDriverId) return;
-    
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
       const response = await fetch(`${apiUrl}/api/drivers/${deletingDriverId}`, {
         method: 'DELETE',
       });
-
       if (!response.ok) throw new Error('Failed to delete driver');
-
       setDrivers(drivers.filter(d => d.id !== deletingDriverId));
       setShowDeleteModal(false);
       setDeletingDriverId(null);
@@ -114,6 +99,7 @@ export default function Home() {
         </div>
         <p>Выберите водителя или номер машины</p>
       </div>
+
       <div className="container">
         {drivers.length === 0 ? (
           <div className="card">
@@ -186,7 +172,6 @@ export default function Home() {
         )}
       </div>
 
-      {/* Кнопка добавления */}
       <button
         onClick={() => setShowModal(true)}
         style={{
@@ -211,7 +196,6 @@ export default function Home() {
         +
       </button>
 
-      {/* Кнопка точек */}
       <button
         onClick={() => router.push('/points')}
         style={{
@@ -237,7 +221,6 @@ export default function Home() {
         Точки
       </button>
 
-      {/* Модальное окно */}
       {showModal && (
         <div
           style={{
@@ -285,30 +268,14 @@ export default function Home() {
               <button
                 onClick={handleAddDriver}
                 className="btn"
-                style={{
-                  flex: 1,
-                  background: '#4CAF50',
-                  color: 'white',
-                  padding: '12px',
-                  fontSize: '16px'
-                }}
+                style={{ flex: 1, background: '#4CAF50', color: 'white', padding: '12px', fontSize: '16px' }}
               >
                 {editingDriver ? 'Сохранить' : 'Добавить'}
               </button>
               <button
-                onClick={() => {
-                  setShowModal(false);
-                  setEditingDriver(null);
-                  setNewDriverName('');
-                }}
+                onClick={() => { setShowModal(false); setEditingDriver(null); setNewDriverName(''); }}
                 className="btn"
-                style={{
-                  flex: 1,
-                  background: '#9E9E9E',
-                  color: 'white',
-                  padding: '12px',
-                  fontSize: '16px'
-                }}
+                style={{ flex: 1, background: '#9E9E9E', color: 'white', padding: '12px', fontSize: '16px' }}
               >
                 Отмена
               </button>
@@ -317,7 +284,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Модальное окно удаления */}
       {showDeleteModal && (
         <div
           style={{
@@ -351,29 +317,14 @@ export default function Home() {
               <button
                 onClick={handleDeleteDriver}
                 className="btn"
-                style={{
-                  flex: 1,
-                  background: '#F44336',
-                  color: 'white',
-                  padding: '12px',
-                  fontSize: '16px'
-                }}
+                style={{ flex: 1, background: '#F44336', color: 'white', padding: '12px', fontSize: '16px' }}
               >
                 Удалить
               </button>
               <button
-                onClick={() => {
-                  setShowDeleteModal(false);
-                  setDeletingDriverId(null);
-                }}
+                onClick={() => { setShowDeleteModal(false); setDeletingDriverId(null); }}
                 className="btn"
-                style={{
-                  flex: 1,
-                  background: '#9E9E9E',
-                  color: 'white',
-                  padding: '12px',
-                  fontSize: '16px'
-                }}
+                style={{ flex: 1, background: '#9E9E9E', color: 'white', padding: '12px', fontSize: '16px' }}
               >
                 Отмена
               </button>

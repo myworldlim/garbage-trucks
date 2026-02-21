@@ -1,3 +1,4 @@
+//backend\internal\handlers\points.go
 package handlers
 
 import (
@@ -11,14 +12,20 @@ import (
 )
 
 func GetPointsHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("GetPointsHandler: запрос точек")
+	
 	points, err := models.GetAllPoints(context.Background())
 	if err != nil {
-		http.Error(w, "Ошибка получения точек", http.StatusInternalServerError)
+		log.Printf("GetPointsHandler: ошибка получения точек: %v", err)
+		http.Error(w, "Ошибка получения точек: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-
+	
+	log.Printf("GetPointsHandler: найдено %d точек", len(points))
+	
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(points); err != nil {
+		log.Printf("GetPointsHandler: ошибка кодирования: %v", err)
 		http.Error(w, "Ошибка кодирования ответа", http.StatusInternalServerError)
 	}
 }
@@ -44,17 +51,19 @@ func CreatePointHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Creating point: %s, drivers: %v, len: %d", req.Name, req.DriverIDs, len(req.DriverIDs))
-
-	if req.Name == "" || req.Address == "" {
-		http.Error(w, "Название и адрес обязательны", http.StatusBadRequest)
+	if req.Name == "" {
+		http.Error(w, "Название обязательно", http.StatusBadRequest)
 		return
+	}
+
+	if req.Address == "" {
+		req.Address = req.Name
 	}
 
 	point, err := models.CreatePointWithDrivers(context.Background(), req.Name, req.Address, req.City, req.Latitude, req.Longitude, req.DriverIDs)
 	if err != nil {
 		log.Printf("Error creating point: %v", err)
-		http.Error(w, "Ошибка создания точки", http.StatusInternalServerError)
+		http.Error(w, "Ошибка создания точки: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -73,7 +82,6 @@ func DeletePointHandler(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 	idStr := vars["id"]
-
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		http.Error(w, "id должен быть числом", http.StatusBadRequest)
@@ -100,7 +108,6 @@ func UpdatePointHandler(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 	idStr := vars["id"]
-
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		http.Error(w, "id должен быть числом", http.StatusBadRequest)
@@ -121,17 +128,19 @@ func UpdatePointHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Updating point %d: %s, drivers: %v", id, req.Name, req.DriverIDs)
-
-	if req.Name == "" || req.Address == "" {
-		http.Error(w, "Название и адрес обязательны", http.StatusBadRequest)
+	if req.Name == "" {
+		http.Error(w, "Название обязательно", http.StatusBadRequest)
 		return
+	}
+
+	if req.Address == "" {
+		req.Address = req.Name
 	}
 
 	point, err := models.UpdatePointWithDrivers(context.Background(), id, req.Name, req.Address, req.City, req.Latitude, req.Longitude, req.DriverIDs)
 	if err != nil {
 		log.Printf("Error updating point: %v", err)
-		http.Error(w, "Ошибка обновления точки", http.StatusInternalServerError)
+		http.Error(w, "Ошибка обновления точки: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 

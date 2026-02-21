@@ -1,0 +1,2496 @@
+{
+  "name": "garbage-trucks-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^14.2.0",
+    "next-pwa": "^5.6.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "@types/minimatch": "^6.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.0.0"
+  }
+}
+
+const withPWA = require('next-pwa')({
+  dest: 'public',
+  register: true,
+  skipWaiting: true,
+  disable: process.env.NODE_ENV === 'development',
+
+  // Важные настройки для лучшей работы оффлайн
+  fallbacks: {
+    // Если хочешь, можешь создать public/offline.html и раскомментировать
+    // image: '/offline.png',
+    // document: '/offline.html',
+    // font: '/fallback.woff2',
+  },
+
+  // Основные правила кэширования (runtimeCaching)
+  runtimeCaching: [
+    // 1. Yandex Maps тайлы — CacheFirst (самое важное для оффлайн-карты)
+    {
+      urlPattern: ({ url }) =>
+        url.hostname.includes('maps.yandex.net') ||
+        url.hostname.includes('yandex.ru') ||
+        url.hostname.includes('yastatic.net') ||
+        url.pathname.includes('/tiles/') ||
+        url.pathname.match(/\.(png|jpg|webp|svg|json)$/i),
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'yandex-maps-tiles',
+        expiration: {
+          maxEntries: 15000,              // достаточно для региона + разные зумы
+          maxAgeSeconds: 30 * 24 * 60 * 60, // 30 дней
+          purgeOnQuotaError: true,
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
+      },
+    },
+
+    // 2. API-запросы — StaleWhileRevalidate
+    // → показывает кэшированные данные сразу, обновляет в фоне когда сеть появится
+    {
+      urlPattern: /\/api\//,
+      handler: 'StaleWhileRevalidate',
+      options: {
+        cacheName: 'api-cache',
+        networkTimeoutSeconds: 10,
+        expiration: {
+          maxEntries: 100,
+          maxAgeSeconds: 60 * 60,       // 1 час — маршруты не устаревают слишком быстро
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
+      },
+    },
+
+    // 3. Статические файлы Next.js (js, css, chunks) — уже кэшируется по умолчанию, но усилим
+    {
+      urlPattern: /^https?:\/\/[^/]+\/_next\/static\//,
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'next-static-assets',
+        expiration: {
+          maxEntries: 200,
+          maxAgeSeconds: 30 * 24 * 60 * 60,
+        },
+      },
+    },
+
+    // 4. Изображения, иконки, шрифты из public/
+    {
+      urlPattern: /\.(?:png|jpg|jpeg|svg|webp|ico|woff2?)$/,
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'static-assets',
+        expiration: {
+          maxEntries: 100,
+          maxAgeSeconds: 30 * 24 * 60 * 60,
+        },
+      },
+    },
+
+    // 5. Всё остальное — NetworkFirst (стандартное поведение)
+    {
+      urlPattern: /^https?.*/,
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'others',
+        networkTimeoutSeconds: 10,
+        expiration: {
+          maxEntries: 200,
+        },
+      },
+    },
+  ],
+});
+
+module.exports = withPWA({
+  reactStrictMode: true,
+
+  // Дополнительные полезные настройки (по желанию)
+  images: {
+    unoptimized: true, // если не используешь next/image для оптимизации
+  },
+
+  // Если используешь экспериментальные фичи
+  experimental: {
+    // scrollRestoration: true, // можно включить позже
+  },
+});
+
+
+.env
+NEXT_PUBLIC_API_URL=http://localhost:8080
+
+{
+  "name": "Garbage Trucks",
+  "short_name": "Trucks",
+  "description": "Приложение для управления маршрутами мусоровозов",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4CAF50",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+
+if(!self.define){let e,s={};const n=(n,i)=>(n=new URL(n+".js",i).href,s[n]||new Promise(s=>{if("document"in self){const e=document.createElement("script");e.src=n,e.onload=s,document.head.appendChild(e)}else e=n,importScripts(n),s()}).then(()=>{let e=s[n];if(!e)throw new Error(`Module ${n} didn’t register its module`);return e}));self.define=(i,a)=>{const t=e||("document"in self?document.currentScript.src:"")||location.href;if(s[t])return;let c={};const o=e=>n(e,t),r={module:{uri:t},exports:c,require:o};s[t]=Promise.all(i.map(e=>r[e]||o(e))).then(e=>(a(...e),c))}}define(["./workbox-1bb06f5e"],function(e){"use strict";importScripts(),self.skipWaiting(),e.clientsClaim(),e.precacheAndRoute([{url:"/_next/app-build-manifest.json",revision:"f4807022c6e94ca780d5d8f85a9d7b25"},{url:"/_next/static/b4YpqZv2o-jOGiplHUvhP/_buildManifest.js",revision:"c155cce658e53418dec34664328b51ac"},{url:"/_next/static/b4YpqZv2o-jOGiplHUvhP/_ssgManifest.js",revision:"b6652df95db52feb4daf4eca35380933"},{url:"/_next/static/chunks/117-baab43fc83142998.js",revision:"b4YpqZv2o-jOGiplHUvhP"},{url:"/_next/static/chunks/448-25d1b2f8db326ea5.js",revision:"b4YpqZv2o-jOGiplHUvhP"},{url:"/_next/static/chunks/782-a0dbe612affc15fd.js",revision:"b4YpqZv2o-jOGiplHUvhP"},{url:"/_next/static/chunks/app/_not-found/page-b62982a1b0a6c401.js",revision:"b4YpqZv2o-jOGiplHUvhP"},{url:"/_next/static/chunks/app/driver/%5Bid%5D/page-066494bc96d87f85.js",revision:"b4YpqZv2o-jOGiplHUvhP"},{url:"/_next/static/chunks/app/layout-70afe93e58993453.js",revision:"b4YpqZv2o-jOGiplHUvhP"},{url:"/_next/static/chunks/app/page-aea9f524d22a630c.js",revision:"b4YpqZv2o-jOGiplHUvhP"},{url:"/_next/static/chunks/app/points/page-994748b4ef659681.js",revision:"b4YpqZv2o-jOGiplHUvhP"},{url:"/_next/static/chunks/fd9d1056-87da80e0c187477b.js",revision:"b4YpqZv2o-jOGiplHUvhP"},{url:"/_next/static/chunks/framework-f66176bb897dc684.js",revision:"b4YpqZv2o-jOGiplHUvhP"},{url:"/_next/static/chunks/main-app-33b346a48fbdbc85.js",revision:"b4YpqZv2o-jOGiplHUvhP"},{url:"/_next/static/chunks/main-eb763e1294a35fee.js",revision:"b4YpqZv2o-jOGiplHUvhP"},{url:"/_next/static/chunks/pages/_app-72b849fbd24ac258.js",revision:"b4YpqZv2o-jOGiplHUvhP"},{url:"/_next/static/chunks/pages/_error-7ba65e1336b92748.js",revision:"b4YpqZv2o-jOGiplHUvhP"},{url:"/_next/static/chunks/polyfills-42372ed130431b0a.js",revision:"846118c33b2c0e922d7b3a7676f81f6f"},{url:"/_next/static/chunks/webpack-c81f7fd28659d64f.js",revision:"b4YpqZv2o-jOGiplHUvhP"},{url:"/_next/static/css/bf533200a5777926.css",revision:"bf533200a5777926"},{url:"/favicon.ico",revision:"16dc80d083604aa4513d3f902cad56ea"},{url:"/icon-192x192.png",revision:"d643fa74e7bdd2a60234c1d7c3e56cb2"},{url:"/icon-512x512 (2).png",revision:"c4f36c4758a6a279b7777f729b5a76c6"},{url:"/images.png",revision:"98099633a464a420b40ee52b6c51465d"},{url:"/logo.png",revision:"07b4834f574cafbdb6bc94dd155e37b4"},{url:"/manifest.json",revision:"85c0a4a79d0ae7559e6c1d5aa7883810"}],{ignoreURLParametersMatching:[]}),e.cleanupOutdatedCaches(),e.registerRoute("/",new e.NetworkFirst({cacheName:"start-url",plugins:[{cacheWillUpdate:async({request:e,response:s,event:n,state:i})=>s&&"opaqueredirect"===s.type?new Response(s.body,{status:200,statusText:"OK",headers:s.headers}):s}]}),"GET"),e.registerRoute(/^https:\/\/fonts\.(?:gstatic)\.com\/.*/i,new e.CacheFirst({cacheName:"google-fonts-webfonts",plugins:[new e.ExpirationPlugin({maxEntries:4,maxAgeSeconds:31536e3})]}),"GET"),e.registerRoute(/^https:\/\/fonts\.(?:googleapis)\.com\/.*/i,new e.StaleWhileRevalidate({cacheName:"google-fonts-stylesheets",plugins:[new e.ExpirationPlugin({maxEntries:4,maxAgeSeconds:604800})]}),"GET"),e.registerRoute(/\.(?:eot|otf|ttc|ttf|woff|woff2|font.css)$/i,new e.StaleWhileRevalidate({cacheName:"static-font-assets",plugins:[new e.ExpirationPlugin({maxEntries:4,maxAgeSeconds:604800})]}),"GET"),e.registerRoute(/\.(?:jpg|jpeg|gif|png|svg|ico|webp)$/i,new e.StaleWhileRevalidate({cacheName:"static-image-assets",plugins:[new e.ExpirationPlugin({maxEntries:64,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\/_next\/image\?url=.+$/i,new e.StaleWhileRevalidate({cacheName:"next-image",plugins:[new e.ExpirationPlugin({maxEntries:64,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\.(?:mp3|wav|ogg)$/i,new e.CacheFirst({cacheName:"static-audio-assets",plugins:[new e.RangeRequestsPlugin,new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\.(?:mp4)$/i,new e.CacheFirst({cacheName:"static-video-assets",plugins:[new e.RangeRequestsPlugin,new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\.(?:js)$/i,new e.StaleWhileRevalidate({cacheName:"static-js-assets",plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\.(?:css|less)$/i,new e.StaleWhileRevalidate({cacheName:"static-style-assets",plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\/_next\/data\/.+\/.+\.json$/i,new e.StaleWhileRevalidate({cacheName:"next-data",plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\.(?:json|xml|csv)$/i,new e.NetworkFirst({cacheName:"static-data-assets",plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(({url:e})=>{if(!(self.origin===e.origin))return!1;const s=e.pathname;return!s.startsWith("/api/auth/")&&!!s.startsWith("/api/")},new e.NetworkFirst({cacheName:"apis",networkTimeoutSeconds:10,plugins:[new e.ExpirationPlugin({maxEntries:16,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(({url:e})=>{if(!(self.origin===e.origin))return!1;return!e.pathname.startsWith("/api/")},new e.NetworkFirst({cacheName:"others",networkTimeoutSeconds:10,plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(({url:e})=>!(self.origin===e.origin),new e.NetworkFirst({cacheName:"cross-origin",networkTimeoutSeconds:10,plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:3600})]}),"GET")});
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background: #f5f5f5;
+  color: #333;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.header {
+  background: #4CAF50;
+  color: white;
+  padding: 10px;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.card {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  margin: 15px 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.3s;
+}
+
+.btn-primary {
+  background: #4CAF50;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #45a049;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+}
+
+import type { Metadata, Viewport } from 'next';
+import './globals.css';
+
+export const metadata: Metadata = {
+  title: 'Garbage Trucks',
+  description: 'Управление маршрутами мусоровозов',
+  manifest: '/manifest.json',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  themeColor: '#4CAF50',
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="ru">
+      <head>
+        <link rel="icon" href="/favicon.ico" />
+        <link rel="apple-touch-icon" href="/icon-192x192.png" />
+      </head>
+      <body>{children}</body>
+    </html>
+  );
+}
+
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+
+interface Driver {
+  id: number;
+  name: string;
+}
+
+export default function Home() {
+  const router = useRouter();
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingDriverId, setDeletingDriverId] = useState<number | null>(null);
+  const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
+  const [newDriverName, setNewDriverName] = useState('');
+
+  useEffect(() => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    fetch(`${apiUrl}/api/drivers`)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        setDrivers(data || []);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Error fetching drivers:', err);
+        setLoading(false);
+      });
+  }, []);
+
+  const handleAddDriver = async () => {
+    if (!newDriverName.trim()) return;
+    
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      
+      if (editingDriver) {
+        // Редактирование
+        const response = await fetch(`${apiUrl}/api/drivers/${editingDriver.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name: newDriverName }),
+        });
+
+        if (!response.ok) throw new Error('Failed to update driver');
+
+        const updatedDriver = await response.json();
+        setDrivers(drivers.map(d => d.id === editingDriver.id ? updatedDriver : d));
+      } else {
+        // Добавление
+        const response = await fetch(`${apiUrl}/api/drivers`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name: newDriverName }),
+        });
+
+        if (!response.ok) throw new Error('Failed to create driver');
+
+        const newDriver = await response.json();
+        setDrivers([...drivers, newDriver]);
+      }
+      
+      setShowModal(false);
+      setEditingDriver(null);
+      setNewDriverName('');
+    } catch (err) {
+      console.error('Error saving driver:', err);
+      alert('Ошибка сохранения водителя');
+    }
+  };
+
+  const handleDeleteDriver = async () => {
+    if (!deletingDriverId) return;
+    
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/drivers/${deletingDriverId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) throw new Error('Failed to delete driver');
+
+      setDrivers(drivers.filter(d => d.id !== deletingDriverId));
+      setShowDeleteModal(false);
+      setDeletingDriverId(null);
+    } catch (err) {
+      console.error('Error deleting driver:', err);
+      alert('Ошибка удаления водителя');
+    }
+  };
+
+  if (loading) {
+    return <div className="loading">Загрузка...</div>;
+  }
+
+  return (
+    <div>
+      <div className="header">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+          <img src="/logo.png" alt="Logo" style={{ width: '50px', height: '50px' }} />
+          <h1 style={{ margin: 0 }}>Garbage Trucks</h1>
+        </div>
+        <p>Выберите водителя или номер машины</p>
+      </div>
+      <div className="container">
+        {drivers.length === 0 ? (
+          <div className="card">
+            <p>Нет доступных водителей. Проверьте подключение к серверу.</p>
+          </div>
+        ) : (
+          drivers.map(driver => (
+            <div key={driver.id} style={{ position: 'relative' }}>
+              <Link href={`/driver/${driver.id}`} style={{ textDecoration: 'none' }}>
+                <div className="card" style={{ cursor: 'pointer' }}>
+                  <h2>{driver.name}</h2>
+                  <p style={{ color: '#666', marginTop: '5px' }}>Посмотреть маршрут →</p>
+                </div>
+              </Link>
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  setDeletingDriverId(driver.id);
+                  setShowDeleteModal(true);
+                }}
+                style={{
+                  position: 'absolute',
+                  top: '10px',
+                  right: '25px',
+                  background: '#F44336',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '30px',
+                  height: '30px',
+                  cursor: 'pointer',
+                  fontSize: '18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 10
+                }}
+              >
+                ×
+              </button>
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  setEditingDriver(driver);
+                  setNewDriverName(driver.name);
+                  setShowModal(true);
+                }}
+                style={{
+                  position: 'absolute',
+                  bottom: '10px',
+                  right: '25px',
+                  background: '#2196F3',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '30px',
+                  height: '30px',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 10
+                }}
+              >
+                ✏️
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Кнопка добавления */}
+      <button
+        onClick={() => setShowModal(true)}
+        style={{
+          position: 'fixed',
+          bottom: '30px',
+          left: '30px',
+          width: '60px',
+          height: '60px',
+          borderRadius: '50%',
+          background: '#4CAF50',
+          color: 'white',
+          border: 'none',
+          fontSize: '32px',
+          cursor: 'pointer',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}
+      >
+        +
+      </button>
+
+      {/* Кнопка точек */}
+      <button
+        onClick={() => router.push('/points')}
+        style={{
+          position: 'fixed',
+          bottom: '30px',
+          right: '30px',
+          width: '60px',
+          height: '60px',
+          borderRadius: '50%',
+          background: '#2196F3',
+          color: 'white',
+          border: 'none',
+          fontSize: '16px',
+          cursor: 'pointer',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          fontWeight: 'bold'
+        }}
+      >
+        Точки
+      </button>
+
+      {/* Модальное окно */}
+      {showModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000
+          }}
+          onClick={() => setShowModal(false)}
+        >
+          <div
+            style={{
+              background: 'white',
+              padding: '30px',
+              borderRadius: '12px',
+              width: '90%',
+              maxWidth: '400px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.2)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginBottom: '20px' }}>{editingDriver ? 'Редактировать водителя' : 'Добавить водителя'}</h2>
+            <input
+              type="text"
+              placeholder="Имя или номер машины"
+              value={newDriverName}
+              onChange={(e) => setNewDriverName(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '12px',
+                fontSize: '16px',
+                border: '2px solid #ddd',
+                borderRadius: '8px',
+                marginBottom: '20px',
+                boxSizing: 'border-box'
+              }}
+            />
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={handleAddDriver}
+                className="btn"
+                style={{
+                  flex: 1,
+                  background: '#4CAF50',
+                  color: 'white',
+                  padding: '12px',
+                  fontSize: '16px'
+                }}
+              >
+                {editingDriver ? 'Сохранить' : 'Добавить'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowModal(false);
+                  setEditingDriver(null);
+                  setNewDriverName('');
+                }}
+                className="btn"
+                style={{
+                  flex: 1,
+                  background: '#9E9E9E',
+                  color: 'white',
+                  padding: '12px',
+                  fontSize: '16px'
+                }}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно удаления */}
+      {showDeleteModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000
+          }}
+          onClick={() => setShowDeleteModal(false)}
+        >
+          <div
+            style={{
+              background: 'white',
+              padding: '30px',
+              borderRadius: '12px',
+              width: '90%',
+              maxWidth: '400px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.2)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginBottom: '20px' }}>Удалить водителя?</h2>
+            <p style={{ marginBottom: '20px', color: '#666' }}>Это действие нельзя отменить. Все маршруты водителя будут удалены.</p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={handleDeleteDriver}
+                className="btn"
+                style={{
+                  flex: 1,
+                  background: '#F44336',
+                  color: 'white',
+                  padding: '12px',
+                  fontSize: '16px'
+                }}
+              >
+                Удалить
+              </button>
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeletingDriverId(null);
+                }}
+                className="btn"
+                style={{
+                  flex: 1,
+                  background: '#9E9E9E',
+                  color: 'white',
+                  padding: '12px',
+                  fontSize: '16px'
+                }}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+
+interface Point {
+  id: number;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  city: string;
+  drivers?: string[];
+}
+
+interface Driver {
+  id: number;
+  name: string;
+}
+
+export default function PointsPage() {
+  const router = useRouter();
+  const [points, setPoints] = useState<Point[]>([]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingPointId, setDeletingPointId] = useState<number | null>(null);
+  const [editingPoint, setEditingPoint] = useState<Point | null>(null);
+  const [selectedDrivers, setSelectedDrivers] = useState<number[]>([]);
+  const [newPoint, setNewPoint] = useState({
+    name: '',
+    address: '',
+    coordinates: '',
+    city: 'Рязань'
+  });
+
+  useEffect(() => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    
+    // Загружаем точки
+    fetch(`${apiUrl}/api/points`)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        setPoints(data || []);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Error fetching points:', err);
+        setLoading(false);
+      });
+
+    // Загружаем водителей
+    fetch(`${apiUrl}/api/drivers`)
+      .then(res => res.json())
+      .then(data => setDrivers(data || []))
+      .catch(err => console.error('Error fetching drivers:', err));
+  }, []);
+
+  const handleAddPoint = async () => {
+    if (!newPoint.name.trim() || !newPoint.coordinates.trim()) {
+      alert('Заполните название и координаты');
+      return;
+    }
+
+    const coords = newPoint.coordinates.split(',').map(c => c.trim());
+    if (coords.length !== 2) {
+      alert('Неверный формат координат. Используйте: 54.6269, 39.7464');
+      return;
+    }
+
+    const latitude = parseFloat(coords[0]);
+    const longitude = parseFloat(coords[1]);
+
+    if (isNaN(latitude) || isNaN(longitude)) {
+      alert('Координаты должны быть числами');
+      return;
+    }
+    
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      
+      if (editingPoint) {
+        // Редактирование
+        const response = await fetch(`${apiUrl}/api/points/${editingPoint.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: newPoint.name,
+            address: newPoint.address || `Точка ${newPoint.name}`,
+            latitude: latitude,
+            longitude: longitude,
+            city: newPoint.city,
+            driver_ids: selectedDrivers
+          }),
+        });
+
+        if (!response.ok) throw new Error('Failed to update point');
+
+        // Перезагружаем все точки
+        const pointsResponse = await fetch(`${apiUrl}/api/points`);
+        if (pointsResponse.ok) {
+          const updatedPoints = await pointsResponse.json();
+          setPoints(updatedPoints || []);
+        }
+      } else {
+        // Добавление
+        const response = await fetch(`${apiUrl}/api/points`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: newPoint.name,
+            address: newPoint.address || `Точка ${newPoint.name}`,
+            latitude: latitude,
+            longitude: longitude,
+            city: newPoint.city,
+            driver_ids: selectedDrivers
+          }),
+        });
+
+        if (!response.ok) throw new Error('Failed to create point');
+
+        // Перезагружаем все точки
+        const pointsResponse = await fetch(`${apiUrl}/api/points`);
+        if (pointsResponse.ok) {
+          const updatedPoints = await pointsResponse.json();
+          setPoints(updatedPoints || []);
+        }
+      }
+      
+      setShowModal(false);
+      setEditingPoint(null);
+      setSelectedDrivers([]);
+      setNewPoint({ name: '', address: '', coordinates: '', city: 'Рязань' });
+    } catch (err) {
+      console.error('Error saving point:', err);
+      alert('Ошибка сохранения точки');
+    }
+  };
+
+  const handleEditPoint = async (point: Point) => {
+    setEditingPoint(point);
+    setNewPoint({
+      name: point.name,
+      address: point.address,
+      coordinates: `${point.latitude}, ${point.longitude}`,
+      city: point.city
+    });
+    
+    // Загружаем водителей для этой точки
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/routes?point_id=${point.id}`);
+      if (response.ok) {
+        const routes = await response.json();
+        const driverIds = (routes || []).map((r: any) => r.driver_id);
+        setSelectedDrivers(driverIds);
+      } else {
+        setSelectedDrivers([]);
+      }
+    } catch (err) {
+      console.error('Error fetching point drivers:', err);
+      setSelectedDrivers([]);
+    }
+    
+    setShowModal(true);
+  };
+
+  const fetchAddressFromCoordinates = async (coordinates: string) => {
+    const coords = coordinates.split(',').map(c => c.trim());
+    if (coords.length !== 2) return;
+
+    const latitude = parseFloat(coords[0]);
+    const longitude = parseFloat(coords[1]);
+
+    if (isNaN(latitude) || isNaN(longitude)) return;
+
+    try {
+      const response = await fetch(
+        `https://geocode-maps.yandex.ru/1.x/?apikey=8deea7af-f681-4ac6-96b6-c6f2d7ac1ec7&geocode=${longitude},${latitude}&format=json&lang=ru_RU`
+      );
+      const data = await response.json();
+      
+      const geoObject = data.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
+      if (geoObject) {
+        const address = geoObject.metaDataProperty?.GeocoderMetaData?.text || '';
+        setNewPoint(prev => ({ ...prev, address }));
+      }
+    } catch (err) {
+      console.error('Error fetching address:', err);
+    }
+  };
+
+  const handleDeletePoint = async () => {
+    if (!deletingPointId) return;
+    
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/points/${deletingPointId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) throw new Error('Failed to delete point');
+
+      setPoints(points.filter(p => p.id !== deletingPointId));
+      setShowDeleteModal(false);
+      setDeletingPointId(null);
+    } catch (err) {
+      console.error('Error deleting point:', err);
+      alert('Ошибка удаления точки');
+    }
+  };
+
+  if (loading) {
+    return <div className="loading">Загрузка...</div>;
+  }
+
+  return (
+    <div>
+      <div className="header">
+        <button onClick={() => router.back()} style={{ position: 'absolute', left: '20px', background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', fontSize: '24px', cursor: 'pointer', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.3s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'} onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}>←</button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+          <img src="/logo.png" alt="Logo" style={{ width: '35px', height: '35px' }} />
+          <h1 style={{ margin: 0, fontSize: '24px' }}>Точки сбора</h1>
+        </div>
+        <p>{points.length} точек</p>
+      </div>
+      <div className="container">
+        {points.length === 0 ? (
+          <div className="card">
+            <p>Нет точек сбора</p>
+          </div>
+        ) : (
+          points.map(point => (
+            <div key={point.id} className="card" style={{ position: 'relative' }}>
+              <button
+                onClick={() => {
+                  setDeletingPointId(point.id);
+                  setShowDeleteModal(true);
+                }}
+                style={{
+                  position: 'absolute',
+                  top: '10px',
+                  right: '10px',
+                  background: '#F44336',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '30px',
+                  height: '30px',
+                  cursor: 'pointer',
+                  fontSize: '18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                ×
+              </button>
+              <button
+                onClick={() => handleEditPoint(point)}
+                style={{
+                  position: 'absolute',
+                  bottom: '10px',
+                  right: '10px',
+                  background: '#2196F3',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '30px',
+                  height: '30px',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                ✏️
+              </button>
+              <h3>{point.name}</h3>
+              <p style={{ color: '#666', margin: '5px 0' }}>{point.address}</p>
+              <p style={{ fontSize: '14px', color: '#999' }}>
+                📍 {point.latitude.toFixed(4)}, {point.longitude.toFixed(4)}
+              </p>
+              <p style={{ fontSize: '14px', color: '#999' }}>
+                🏙️ {point.city}
+              </p>
+              {point.drivers && point.drivers.length > 0 && (
+                <p style={{ fontSize: '14px', color: '#4CAF50', marginTop: '5px', fontWeight: 'bold' }}>
+                  👤 Водители: {point.drivers.join(', ')}
+                </p>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Кнопка добавления */}
+      <button
+        onClick={() => setShowModal(true)}
+        style={{
+          position: 'fixed',
+          bottom: '30px',
+          left: '30px',
+          width: '60px',
+          height: '60px',
+          borderRadius: '50%',
+          background: '#4CAF50',
+          color: 'white',
+          border: 'none',
+          fontSize: '32px',
+          cursor: 'pointer',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}
+      >
+        +
+      </button>
+
+      {/* Модальное окно */}
+      {showModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000
+          }}
+          onClick={() => setShowModal(false)}
+        >
+          <div
+            style={{
+              background: 'white',
+              padding: '30px',
+              borderRadius: '12px',
+              width: '90%',
+              maxWidth: '500px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.2)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginBottom: '20px' }}>{editingPoint ? 'Редактировать точку' : 'Добавить точку сбора'}</h2>
+            <input
+              type="text"
+              placeholder="Название *"
+              value={newPoint.name}
+              onChange={(e) => setNewPoint({...newPoint, name: e.target.value})}
+              style={{
+                width: '100%',
+                padding: '12px',
+                fontSize: '16px',
+                border: '2px solid #ddd',
+                borderRadius: '8px',
+                marginBottom: '15px',
+                boxSizing: 'border-box'
+              }}
+            />
+            <input
+              type="text"
+              placeholder="Адрес заполняется по координатам"
+              value={newPoint.address}
+              onChange={(e) => setNewPoint({...newPoint, address: e.target.value})}
+              style={{
+                width: '100%',
+                padding: '12px',
+                fontSize: '14px',
+                border: '2px solid #ddd',
+                borderRadius: '8px',
+                marginBottom: '15px',
+                boxSizing: 'border-box'
+              }}
+            />
+            <input
+              type="text"
+              placeholder="Координаты (54.6269, 39.7464)"
+              value={newPoint.coordinates}
+              onChange={(e) => setNewPoint({...newPoint, coordinates: e.target.value})}
+              onBlur={(e) => {
+                if (e.target.value.trim() && !newPoint.address) {
+                  fetchAddressFromCoordinates(e.target.value);
+                }
+              }}
+              style={{
+                width: '100%',
+                padding: '12px',
+                fontSize: '14px',
+                border: '2px solid #ddd',
+                borderRadius: '8px',
+                marginBottom: '15px',
+                boxSizing: 'border-box'
+              }}
+            />
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Водители (необязательно)</label>
+              <div style={{ border: '2px solid #ddd', borderRadius: '8px', padding: '10px', maxHeight: '150px', overflowY: 'auto' }}>
+                {drivers.map(driver => (
+                  <label key={driver.id} style={{ display: 'block', padding: '5px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedDrivers.includes(driver.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedDrivers([...selectedDrivers, driver.id]);
+                        } else {
+                          setSelectedDrivers(selectedDrivers.filter(id => id !== driver.id));
+                        }
+                      }}
+                      style={{ marginRight: '8px' }}
+                    />
+                    {driver.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={handleAddPoint}
+                className="btn"
+                style={{
+                  flex: 1,
+                  background: '#4CAF50',
+                  color: 'white',
+                  padding: '12px',
+                  fontSize: '16px'
+                }}
+              >
+                {editingPoint ? 'Сохранить' : 'Добавить'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowModal(false);
+                  setEditingPoint(null);
+                  setSelectedDrivers([]);
+                  setNewPoint({ name: '', address: '', coordinates: '', city: 'Рязань' });
+                }}
+                className="btn"
+                style={{
+                  flex: 1,
+                  background: '#9E9E9E',
+                  color: 'white',
+                  padding: '12px',
+                  fontSize: '16px'
+                }}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно удаления */}
+      {showDeleteModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000
+          }}
+          onClick={() => setShowDeleteModal(false)}
+        >
+          <div
+            style={{
+              background: 'white',
+              padding: '30px',
+              borderRadius: '12px',
+              width: '90%',
+              maxWidth: '400px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.2)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginBottom: '20px' }}>Удалить точку?</h2>
+            <p style={{ marginBottom: '20px', color: '#666' }}>Это действие нельзя отменить.</p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={handleDeletePoint}
+                className="btn"
+                style={{
+                  flex: 1,
+                  background: '#F44336',
+                  color: 'white',
+                  padding: '12px',
+                  fontSize: '16px'
+                }}
+              >
+                Удалить
+              </button>
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeletingPointId(null);
+                }}
+                className="btn"
+                style={{
+                  flex: 1,
+                  background: '#9E9E9E',
+                  color: 'white',
+                  padding: '12px',
+                  fontSize: '16px'
+                }}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+'use client';
+
+import { useEffect, useState, useRef } from 'react';
+import { useParams } from 'next/navigation';
+import Script from 'next/script';
+import { DriverHeader, Map, RoutesList } from './components';
+import { useGeolocation, useRoutes, useMapManager } from './hooks';
+import { getStatusText } from './utils/statusHelpers';
+
+export default function DriverPage() {
+  const params = useParams();
+  const [showModal, setShowModal] = useState(false);
+  const [ymapsLoaded, setYmapsLoaded] = useState(false);
+  const [isMapElementReady, setIsMapElementReady] = useState(false);
+  const [followMode, setFollowMode] = useState(true); // По умолчанию включен
+  const mapRef = useRef<any>(null);
+  const ymapsRef = useRef<any>(null);
+
+  const { userLocation, error: geoError, requestGeolocation } = useGeolocation();
+  const { data, loading, updateStatus } = useRoutes(params.id);
+
+  // ✅ ВАЖНО: Всегда передаем userLocation в хук, но управляем центрированием через followMode
+  const { mapRef: mapManagerRef, isMapReady } = useMapManager({
+    ymaps: ymapsRef.current,
+    routes: data?.routes || [],
+    userLocation: userLocation, // 👈 Всегда передаем, даже когда followMode=false
+    followMode: followMode,     // 👈 Добавляем новый пропс для управления центрированием
+    onStatusUpdate: updateStatus,
+    getStatusText,
+  });
+
+  // Синхронизируем ссылки на карту
+  useEffect(() => {
+    if (mapManagerRef.current) {
+      mapRef.current = mapManagerRef.current;
+    }
+  }, [mapManagerRef.current]);
+
+  // Функции для зума
+  const zoomIn = () => {
+    if (mapRef.current) {
+      const currentZoom = mapRef.current.getZoom();
+      mapRef.current.setZoom(currentZoom + 1, { duration: 200 });
+    }
+  };
+
+  const zoomOut = () => {
+    if (mapRef.current) {
+      const currentZoom = mapRef.current.getZoom();
+      mapRef.current.setZoom(currentZoom - 1, { duration: 200 });
+    }
+  };
+
+  // Функция для ручного центрирования
+  const centerOnUser = () => {
+    if (mapRef.current && userLocation) {
+      mapRef.current.setCenter([userLocation.lat, userLocation.lon], 13, { duration: 300 });
+      setFollowMode(true); // Включаем слежение
+    }
+  };
+
+  // Запрашиваем геолокацию при загрузке
+  useEffect(() => {
+    if (ymapsLoaded && isMapElementReady) {
+      requestGeolocation();
+    }
+  }, [ymapsLoaded, isMapElementReady, requestGeolocation]);
+
+  // Логируем состояние для отладки
+  useEffect(() => {
+    console.log('! Состояние:', { 
+      followMode, 
+      hasLocation: !!userLocation,
+      location: userLocation 
+    });
+  }, [followMode, userLocation]);
+
+  if (loading) {
+    return <div className="loading">Загрузка маршрутов...</div>;
+  }
+
+  if (!data) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column',
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        background: '#f5f5f5',
+        padding: '20px'
+      }}>
+        <h2>Нет данных</h2>
+        <button onClick={() => window.location.reload()}>Повторить</button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <Script
+        src="https://api-maps.yandex.ru/2.1/?apikey=8deea7af-f681-4ac6-96b6-c6f2d7ac1ec7&lang=ru_RU"
+        onLoad={() => {
+          if ((window as any).ymaps) {
+            (window as any).ymaps.ready(() => {
+              ymapsRef.current = (window as any).ymaps;
+              setYmapsLoaded(true);
+            });
+          }
+        }}
+      />
+      
+      <div style={{ 
+        height: '100vh', 
+        display: 'flex', 
+        flexDirection: 'column',
+        overflow: 'hidden'
+      }}>
+        <DriverHeader
+          driverName={data?.driver?.name || 'Водитель'}
+          routeCount={data?.routes?.length || 0}
+        />
+
+        <div style={{ flex: 1, position: 'relative' }}>
+          <Map 
+            mapId="map" 
+            onMapReady={() => setIsMapElementReady(true)}
+          />
+
+          {/* Кнопки зума справа по центру */}
+          <div style={{
+            position: 'fixed',
+            right: '20px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+            zIndex: 1000,
+          }}>
+            <button
+              onClick={zoomIn}
+              style={{
+                width: '50px',
+                height: '50px',
+                borderRadius: '50%',
+                background: '#4CAF50',
+                color: 'white',
+                border: 'none',
+                fontSize: '28px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'scale(1.1)';
+                e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.4)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+              }}
+            >
+              +
+            </button>
+            <button
+              onClick={zoomOut}
+              style={{
+                width: '50px',
+                height: '50px',
+                borderRadius: '50%',
+                background: '#2196F3',
+                color: 'white',
+                border: 'none',
+                fontSize: '28px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'scale(1.1)';
+                e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.4)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+              }}
+            >
+              –
+            </button>
+          </div>
+
+          {/* Кнопка слежения */}
+          <div style={{
+            position: 'fixed',
+            right: '20px',
+            top: 'calc(50% + 70px)',
+            transform: 'translateY(0)',
+            zIndex: 1000,
+          }}>
+            <button
+              onClick={() => {
+                console.log('🔄 Кнопка нажата, текущий режим:', followMode);
+                if (!followMode) {
+                  // Включаем слежение и центрируем
+                  setFollowMode(true);
+                  // Центрируем сразу, не ждем следующего обновления геолокации
+                  setTimeout(() => {
+                    if (mapRef.current && userLocation) {
+                      console.log('🎯 Центрируем на пользователе');
+                      mapRef.current.setCenter([userLocation.lat, userLocation.lon], 17, { duration: 300 });
+                    } else {
+                      console.log('⚠️ Нет данных о местоположении');
+                      requestGeolocation(); // Запрашиваем если нет
+                    }
+                  }, 100);
+                } else {
+                  // Выключаем слежение
+                  setFollowMode(false);
+                }
+              }}
+              style={{
+                width: '50px',
+                height: '50px',
+                borderRadius: '50%',
+                background: followMode ? '#F44336' : '#9E9E9E',
+                color: 'white',
+                border: followMode ? '3px solid #ffffff' : 'none',
+                fontSize: '24px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: followMode 
+                  ? '0 4px 12px rgba(244, 67, 54, 0.5), 0 0 0 2px rgba(255,255,255,0.5)' 
+                  : '0 4px 12px rgba(0,0,0,0.3)',
+                transition: 'all 0.3s',
+                animation: followMode ? 'pulse 2s infinite' : 'none',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'scale(1.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+              }}
+            >
+              🎯
+            </button>
+          </div>
+
+          {/* Анимация пульсации */}
+          <style jsx>{`
+            @keyframes pulse {
+              0% {
+                box-shadow: 0 4px 12px rgba(244, 67, 54, 0.5), 0 0 0 0 rgba(244, 67, 54, 0.5);
+              }
+              70% {
+                box-shadow: 0 4px 12px rgba(244, 67, 54, 0.5), 0 0 0 15px rgba(244, 67, 54, 0);
+              }
+              100% {
+                box-shadow: 0 4px 12px rgba(244, 67, 54, 0.5), 0 0 0 0 rgba(244, 67, 54, 0);
+              }
+            }
+          `}</style>
+
+          {/* Информация о местоположении */}
+          {userLocation && (
+            <div style={{
+              position: 'fixed',
+              top: '100px',
+              left: '50%', // 👈 МЕНЯЕМ left: '15px' на left: '50%'
+              transform: 'translateX(-50%)', // 👈 ДОБАВЛЯЕМ transform для точного центрирования
+              background: 'rgba(0,0,0,0.7)',
+              color: 'white',
+              padding: '6px 12px',
+              borderRadius: '20px',
+              zIndex: 900,
+              fontSize: '12px',
+              backdropFilter: 'blur(4px)',
+              whiteSpace: 'nowrap', // 👈 ДОБАВЛЯЕМ чтобы текст не переносился
+            }}>
+              Слежение: 
+              {followMode ? ' 🔴' : ' ⚪'}
+            </div>
+          )}
+        </div>
+
+        {/* Кнопка списка маршрутов */}
+        <button
+          onClick={() => setShowModal(true)}
+          style={{
+            position: 'fixed',
+            bottom: '30px',
+            right: '30px',
+            width: '60px',
+            height: '60px',
+            borderRadius: '50%',
+            background: '#4CAF50',
+            color: 'white',
+            border: 'none',
+            fontSize: '24px',
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          📋
+        </button>
+
+        <RoutesList
+          routes={data?.routes || []}
+          isOpen={showModal}
+          onClose={() => setShowModal(false)}
+          onStatusChange={updateStatus}
+        />
+      </div>
+    </>
+  );
+}
+
+export const formatDuration = (seconds: number): string => {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+
+  if (hours > 0) {
+    return `${hours}ч ${minutes}м`;
+  }
+  return `${minutes}м`;
+};
+
+export const getStatusColor = (status: string): string => {
+  switch (status) {
+    case 'completed': return '#4CAF50';
+    case 'in_progress': return '#2196F3';
+    case 'pending': return '#FFC107';
+    case 'skipped': return '#9E9E9E';
+    case 'problem': return '#F44336';
+    default: return '#666';
+  }
+};
+
+export const getStatusText = (status: string): string => {
+  switch (status) {
+    case 'completed': return 'Завершено';
+    case 'in_progress': return 'В процессе';
+    case 'pending': return 'Ожидает';
+    case 'skipped': return 'Пропущено';
+    case 'problem': return 'Проблема';
+    default: return status;
+  }
+};
+
+import { useGeolocation } from './useGeolocation';
+import { useRoutes } from './useRoutes';
+import { useMapManager } from './useMapManager';
+
+export { useGeolocation, useRoutes, useMapManager };
+
+// C:\Users\Dmitry\Desktop\garbage_ruck\frontend\app\driver\[id]\hooks\useGeolocation.ts
+import { useEffect, useState, useCallback } from 'react';
+
+export const useGeolocation = () => {
+  const [userLocation, setUserLocation] = useState<{ lat: number; lon: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isWatching, setIsWatching] = useState(false);
+
+  const requestGeolocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setUserLocation({
+        lat: 54.609188,
+        lon: 39.666385,
+      });
+      setError('Geolocation not supported');
+      return;
+    }
+
+    setIsWatching(true);
+
+    // Сначала получаем одноразовую позицию
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+        });
+        setError(null);
+      },
+      (error) => {
+        console.warn('Geolocation error:', error.message);
+        setUserLocation({
+          lat: 54.609188,
+          lon: 39.666385,
+        });
+        setError(error.message);
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 10000,
+        maximumAge: 0,
+      }
+    );
+
+    // Затем начинаем отслеживание
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        setUserLocation({
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+        });
+        setError(null);
+      },
+      (error) => {
+        console.warn('Watch error:', error.message);
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 10000,
+        maximumAge: 5000,
+      }
+    );
+
+    return watchId;
+  }, []);
+
+  useEffect(() => {
+    let watchId: number;
+
+    if (isWatching) {
+      watchId = requestGeolocation() as number;
+    }
+
+    return () => {
+      if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+      setIsWatching(false);
+    };
+  }, [isWatching, requestGeolocation]);
+
+  return { userLocation, error, requestGeolocation: () => setIsWatching(true) };
+};
+
+import { useEffect, useRef, useState } from 'react';
+
+interface Route {
+  id: number;
+  order_number: number;
+  scheduled_at: string;
+  status: string;
+  point: {
+    name: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface UseMapManagerProps {
+  ymaps: any;
+  routes: Route[];
+  userLocation: { lat: number; lon: number } | null;
+  followMode: boolean; // 👈 Добавляем пропс для режима слежения
+  onStatusUpdate?: (routeId: number, status: string) => void;
+  getStatusText: (status: string) => string;
+}
+
+export const useMapManager = ({
+  ymaps,
+  routes,
+  userLocation,
+  followMode, // 👈 Получаем пропс
+  onStatusUpdate,
+  getStatusText,
+}: UseMapManagerProps) => {
+  const mapRef = useRef<any>(null);
+  const placemarksRef = useRef<any[]>([]);
+  const multiRouteRef = useRef<any>(null);
+  const [isMapReady, setIsMapReady] = useState(false);
+  const buildRouteRef = useRef<any>(null);
+  const lastLocationRef = useRef<any>(null); // Для отслеживания изменений
+
+  // Создаём карту ОДИН РАЗ
+  useEffect(() => {
+    if (!ymaps || !routes.length || mapRef.current) return;
+
+    const mapElement = document.getElementById('map');
+    
+    if (!mapElement || mapElement.offsetWidth === 0 || mapElement.offsetHeight === 0) {
+      const timeoutId = setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+      }, 100);
+      return () => clearTimeout(timeoutId);
+    }
+
+    try {
+      const defaultCenter: [number, number] = [54.609188, 39.666385];
+      
+      const center = userLocation
+        ? [userLocation.lat, userLocation.lon]
+        : routes[0]?.point
+          ? [routes[0].point.latitude, routes[0].point.longitude]
+          : defaultCenter;
+
+      const map = new ymaps.Map('map', {
+        center: center,
+        zoom: 12,
+        controls: ['zoomControl', 'geolocationControl', 'trafficControl'],
+      });
+
+      mapRef.current = map;
+      setIsMapReady(true);
+      console.log('✅ Карта создана');
+
+    } catch (error) {
+      console.error('❌ Ошибка создания карты:', error);
+    }
+
+    return () => {
+      if (mapRef.current) {
+        try {
+          mapRef.current.destroy();
+        } catch (e) {
+          console.warn('Ошибка при удалении карты:', e);
+        }
+        mapRef.current = null;
+        setIsMapReady(false);
+      }
+    };
+  }, [ymaps, routes.length]);
+
+  // Обновляем метки
+  useEffect(() => {
+    if (!mapRef.current || !ymaps || !routes.length || !isMapReady) return;
+
+    const map = mapRef.current;
+    
+    // Очищаем старые метки
+    try {
+      placemarksRef.current.forEach((pm) => {
+        try {
+          map.geoObjects.remove(pm);
+        } catch (e) {}
+      });
+      placemarksRef.current = [];
+    } catch (e) {}
+
+    // Добавляем новые метки маршрутов
+    routes.forEach((route, index) => {
+      if (!route.point?.latitude || !route.point?.longitude) return;
+
+      try {
+        const placemark = new ymaps.Placemark(
+          [route.point.latitude, route.point.longitude],
+          {
+            balloonContent: `
+              <div style="padding: 10px; min-width: 220px;">
+                <strong style="font-size: 16px;">#${route.order_number} ${route.point.name}</strong><br/>
+                <span style="color: #666; font-size: 13px;">${route.point.address}</span><br/>
+                <div style="margin-top: 8px; padding: 5px; background: #f5f5f5; border-radius: 4px;">
+                  Статус: <strong style="color: ${getStatusColor(route.status)};">${getStatusText(route.status)}</strong>
+                </div>
+                <button 
+                  onclick="window.buildRoute(${route.point.latitude}, ${route.point.longitude})" 
+                  style="
+                    margin-top: 12px;
+                    padding: 10px 16px;
+                    background: #2196F3;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 14px;
+                    font-weight: bold;
+                    width: 100%;
+                  "
+                >
+                  🚚 Построить маршрут
+                </button>
+              </div>
+            `,
+            iconCaption: `${index + 1}`,
+          },
+          {
+            preset: route.status === 'completed' ? 'islands#greenCircleIcon' :
+                    route.status === 'in_progress' ? 'islands#blueCircleIcon' :
+                    route.status === 'problem' ? 'islands#redCircleIcon' :
+                    'islands#yellowCircleIcon',
+            balloonCloseButton: true,
+          }
+        );
+
+        placemarksRef.current.push(placemark);
+        map.geoObjects.add(placemark);
+      } catch (e) {
+        console.warn('Ошибка добавления метки:', e);
+      }
+    });
+
+    // 👇 ВСЕГДА добавляем метку пользователя, если есть координаты
+    if (userLocation?.lat && userLocation?.lon) {
+      try {
+        // Проверяем, изменилась ли позиция
+        const locationChanged = !lastLocationRef.current || 
+          Math.abs(lastLocationRef.current.lat - userLocation.lat) > 0.0001 ||
+          Math.abs(lastLocationRef.current.lon - userLocation.lon) > 0.0001;
+
+        const userPm = new ymaps.Placemark(
+          [userLocation.lat, userLocation.lon],
+          { 
+            balloonContent: '📍 Ваше местоположение',
+            iconCaption: 'Вы здесь'
+          },
+          { 
+            preset: 'islands#redDotIcon',
+          }
+        );
+        placemarksRef.current.push(userPm);
+        map.geoObjects.add(userPm);
+        
+        // 👇 ЦЕНТРИРУЕМ ТОЛЬКО ЕСЛИ followMode = true
+        if (followMode) {
+          console.log('🎯 Слежение включено - центрируем карту');
+          map.setCenter([userLocation.lat, userLocation.lon], 17, { duration: 300 });
+        } else {
+          console.log('⏸️ Слежение выключено - карта не центрируется');
+        }
+
+        lastLocationRef.current = userLocation; // Запоминаем последнюю позицию
+        
+      } catch (e) {
+        console.warn('Ошибка добавления метки пользователя:', e);
+      }
+    }
+
+  }, [ymaps, routes, userLocation, followMode, isMapReady, getStatusText]); // 👈 Добавили followMode в зависимости
+
+  // Функция построения маршрута
+  useEffect(() => {
+    if (!mapRef.current || !ymaps || !isMapReady) return;
+
+    const buildRoute = (toLat: number, toLon: number) => {
+      console.log('🚗 Построение маршрута...');
+      
+      if (!mapRef.current || !ymaps) {
+        console.error('❌ Карта не готова');
+        return;
+      }
+
+      if (!userLocation) {
+        console.error('❌ Нет данных о местоположении');
+        alert('Пожалуйста, включите геолокацию');
+        return;
+      }
+
+      try {
+        if (multiRouteRef.current) {
+          try {
+            mapRef.current.geoObjects.remove(multiRouteRef.current);
+          } catch (e) {}
+          multiRouteRef.current = null;
+        }
+
+        const multiRoute = new ymaps.multiRouter.MultiRoute(
+          {
+            referencePoints: [
+              [userLocation.lat, userLocation.lon],
+              [toLat, toLon],
+            ],
+            params: {
+              routingMode: 'auto',
+              avoidTrafficJams: true,
+            },
+          },
+          {
+            boundsAutoApply: true,
+            wayPointStartIconColor: '#FF0000',
+            wayPointFinishIconColor: '#4CAF50',
+            routeActiveStrokeColor: '#2196F3',
+            routeActiveStrokeWidth: 6,
+          }
+        );
+
+        multiRoute.events.add('routesloaded', () => {
+          console.log('✅ Маршрут построен');
+          const activeRoute = multiRoute.getActiveRoute();
+          if (activeRoute) {
+            const distance = activeRoute.properties.get('distance')?.text || '?';
+            const duration = activeRoute.properties.get('duration')?.text || '?';
+            console.log(`📊 Расстояние: ${distance}, Время: ${duration}`);
+          }
+        });
+
+        multiRoute.events.add('error', (e: any) => {
+          console.error('❌ Ошибка маршрута:', e);
+        });
+
+        multiRouteRef.current = multiRoute;
+        mapRef.current.geoObjects.add(multiRoute);
+
+      } catch (error) {
+        console.error('❌ Ошибка построения маршрута:', error);
+      }
+    };
+
+    buildRouteRef.current = buildRoute;
+    (window as any).buildRoute = buildRoute;
+    console.log('✅ Функция buildRoute готова');
+
+    return () => {
+      delete (window as any).buildRoute;
+    };
+  }, [ymaps, isMapReady, userLocation]); // 👈 Добавили userLocation
+
+  return { mapRef, isMapReady };
+};
+
+function getStatusColor(status: string): string {
+  switch (status) {
+    case 'completed': return '#4CAF50';
+    case 'in_progress': return '#2196F3';
+    case 'pending': return '#FFC107';
+    case 'skipped': return '#9E9E9E';
+    case 'problem': return '#F44336';
+    default: return '#666';
+  }
+}
+
+import { useEffect, useState } from 'react';
+
+interface Route {
+  id: number;
+  order_number: number;
+  scheduled_at: string;
+  status: string;
+  point: {
+    name: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface Driver {
+  id: number;
+  name: string;
+}
+
+interface RoutesResponse {
+  driver: Driver;
+  routes: Route[];
+}
+
+export const useRoutes = (driverId: string | string[] | undefined) => {
+  const [data, setData] = useState<RoutesResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = () => {
+    if (!driverId) return;
+
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    fetch(`${apiUrl}/api/routes?driver_id=${driverId}`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json();
+      })
+      .then((responseData) => {
+        setData(responseData);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error('Error fetching routes:', err);
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    fetchData(); // Первичная загрузка
+
+    const interval = setInterval(() => {
+      fetchData(); // Автообновление каждые 60 секунд
+    }, 60000);
+
+    return () => clearInterval(interval); // Очистка при размонтировании
+  }, [driverId]);
+
+  const updateStatus = async (routeId: number, status: string) => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      const response = await fetch(
+        `${apiUrl}/api/routes/status?route_id=${routeId}&status=${status}`,
+        {
+          method: 'POST',
+        }
+      );
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Error updating status: ${response.status} ${errorText}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      if (data) {
+        setData({
+          ...data,
+          routes: data.routes.map((r) => (r.id === routeId ? { ...r, status } : r)),
+        });
+      }
+    } catch (err) {
+      console.error('Error updating status:', err);
+      throw err; // Re-throw для обработки в компоненте
+    }
+  };
+
+  return { data, loading, updateStatus };
+};
+
+// C:\Users\Dmitry\Desktop\garbage_ruck\frontend\app\driver\[id]\components\DriverHeader.tsx
+'use client';
+
+import { useRouter } from 'next/navigation';
+
+interface DriverHeaderProps {
+  driverName: string;
+  routeCount: number;
+  lastUpdate?: string; // Добавляем опциональное время последнего обновления
+}
+
+export default function DriverHeader({
+  driverName,
+  routeCount,
+  lastUpdate,
+}: DriverHeaderProps) {
+  const router = useRouter();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    window.location.reload();
+    // Или если используете SWR/React Query:
+    // mutate();
+  };
+
+  const formatTime = (dateString?: string) => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleTimeString('ru-RU', { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+    } catch {
+      return '';
+    }
+  };
+
+  return (
+    <div
+      style={{
+        padding: '12px 20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        color: 'white',
+        background: 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+        position: 'sticky',
+        top: 0,
+        zIndex: 100,
+      }}
+    >
+      <button
+        onClick={() => router.back()}
+        aria-label="Назад"
+        style={{
+          background: 'rgba(255,255,255,0.2)',
+          border: 'none',
+          color: 'white',
+          fontSize: '26px',
+          cursor: 'pointer',
+          borderRadius: '50%',
+          width: '44px',
+          height: '44px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'background 0.3s',
+          outline: 'none',
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'}
+        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+      >
+        ←
+      </button>
+
+      <div style={{ 
+        textAlign: 'center',
+        flex: 1,
+        margin: '0 15px'
+      }}>
+        <h2 style={{ 
+          margin: '0 0 4px 0', 
+          fontSize: '1.5rem',
+          fontWeight: '600',
+          lineHeight: '1.2'
+        }}>
+          {driverName || 'Водитель'}
+        </h2>
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          gap: '8px',
+          flexWrap: 'wrap'
+        }}>
+          <p style={{ 
+            margin: 0, 
+            fontSize: '0.95rem', 
+            opacity: 0.9,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}>
+            <span style={{ fontSize: '18px' }}>📍</span> 
+            {routeCount} {getRouteWord(routeCount)}
+          </p>
+          {lastUpdate && (
+            <p style={{ 
+              margin: 0, 
+              fontSize: '0.85rem', 
+              opacity: 0.8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}>
+              <span style={{ fontSize: '14px' }}>🕐</span>
+              {formatTime(lastUpdate)}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <button
+        onClick={handleRefresh}
+        disabled={isRefreshing}
+        aria-label="Обновить данные"
+        title="Обновить маршруты"
+        style={{
+          background: 'rgba(255,255,255,0.2)',
+          border: 'none',
+          color: 'white',
+          fontSize: '24px',
+          cursor: isRefreshing ? 'not-allowed' : 'pointer',
+          padding: '10px',
+          borderRadius: '50%',
+          width: '44px',
+          height: '44px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'background 0.3s, transform 0.3s',
+          animation: isRefreshing ? 'spin 1s linear infinite' : 'none',
+          outline: 'none',
+        }}
+        onMouseEnter={(e) => !isRefreshing && (e.currentTarget.style.background = 'rgba(255,255,255,0.3)')}
+        onMouseLeave={(e) => !isRefreshing && (e.currentTarget.style.background = 'rgba(255,255,255,0.2)')}
+      >
+        ↻
+      </button>
+
+      <style jsx>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// Вспомогательная функция для склонения слова "точка"
+function getRouteWord(count: number): string {
+  const lastDigit = count % 10;
+  const lastTwoDigits = count % 100;
+
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
+    return 'точек';
+  }
+  if (lastDigit === 1) {
+    return 'точка';
+  }
+  if (lastDigit >= 2 && lastDigit <= 4) {
+    return 'точки';
+  }
+  return 'точек';
+}
+
+// Добавляем useState, если его нет
+import { useState } from 'react';
+
+import DriverHeader from './DriverHeader';
+import Map from './Map';
+import RoutesList from './RoutesList';
+
+export { DriverHeader, Map, RoutesList };
+
+// C:\Users\Dmitry\Desktop\garbage_ruck\frontend\app\driver\[id]\components\Map.tsx
+'use client';
+
+interface MapProps {
+  mapId?: string;
+  onMapReady?: () => void;
+}
+
+export default function Map({ 
+  mapId = 'map',
+  onMapReady 
+}: MapProps) {
+  return (
+    <div
+      id={mapId}
+      ref={(el) => {
+        if (el) {
+          onMapReady?.();
+        }
+      }}
+      style={{ 
+        width: '100%', 
+        height: 'calc(100vh - 80px)', 
+        margin: '0',
+        position: 'relative',
+      }}
+    />
+  );
+}
+
+'use client';
+
+import RouteCard from './RouteCard';
+
+interface Route {
+  id: number;
+  order_number: number;
+  scheduled_at: string;
+  status: string;
+  point: {
+    name: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface RoutesListProps {
+  routes: Route[];
+  isOpen: boolean;
+  onClose: () => void;
+  onStatusChange: (routeId: number, status: string) => void;
+}
+
+export default function RoutesList({
+  routes,
+  isOpen,
+  onClose,
+  onStatusChange,
+}: RoutesListProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'flex-end',
+        zIndex: 2000,
+        padding: '20px',
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: 'white',
+          borderRadius: '12px',
+          width: '400px',
+          maxHeight: '80vh',
+          overflow: 'auto',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          style={{
+            padding: '20px',
+            borderBottom: '1px solid #ddd',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            position: 'sticky',
+            top: 0,
+            background: 'white',
+            zIndex: 1,
+          }}
+        >
+          <h2 style={{ margin: 0 }}>Список точек</h2>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              fontSize: '24px',
+              cursor: 'pointer',
+            }}
+          >
+            ×
+          </button>
+        </div>
+        <div style={{ padding: '5px' }}>
+          {routes && routes.length > 0 ? (
+            routes.map((route) => (
+              <RouteCard
+                key={route.id}
+                route={route}
+                onStatusChange={onStatusChange}
+              />
+            ))
+          ) : (
+            <div
+              style={{
+                padding: '20px',
+                textAlign: 'center',
+                color: '#666',
+              }}
+            >
+              Нет точек для отображения
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+import { useState } from 'react';
+import { getStatusColor, getStatusText } from '../../utils/statusHelpers';
+
+interface Route {
+  id: number;
+  order_number: number;
+  scheduled_at: string;
+  status: string;
+  point: {
+    name: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface RouteCardProps {
+  route: Route;
+  onStatusChange: (routeId: number, status: string) => void;
+}
+
+export default function RouteCard({ route, onStatusChange }: RouteCardProps) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleStatusChange = async (status: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await onStatusChange(route.id, status);
+    } catch (err) {
+      setError(`Ошибка: ${err instanceof Error ? err.message : 'Неизвестная ошибка'}`);
+      setIsLoading(false);
+    }
+    setIsLoading(false);
+  };
+  return (
+    <div
+      style={{
+        padding: '15px',
+        margin: '10px 0',
+        background: '#f9f9f9',
+        borderRadius: '8px',
+        borderLeft: `4px solid ${getStatusColor(route.status)}`,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'start',
+          marginBottom: '10px',
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <h3 style={{ margin: '0 0 5px 0', fontSize: '16px' }}>
+            #{route.order_number} {route.point.name}
+          </h3>
+          <p style={{ color: '#666', margin: '0', fontSize: '14px' }}>
+            {route.point.address}
+          </p>
+        </div>
+        <div
+          style={{
+            padding: '3px 10px',
+            borderRadius: '12px',
+            background: getStatusColor(route.status),
+            color: 'white',
+            fontSize: '12px',
+            fontWeight: 'bold',
+            whiteSpace: 'nowrap',
+            marginLeft: '10px',
+          }}
+        >
+          {getStatusText(route.status)}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+        <button
+          onClick={() => handleStatusChange('in_progress')}
+          disabled={isLoading}
+          style={{
+            padding: '5px 10px',
+            background: '#2196F3',
+            color: 'white',
+            border: 'none',
+            borderRadius: '5px',
+            cursor: isLoading ? 'not-allowed' : 'pointer',
+            fontSize: '12px',
+            opacity: isLoading ? 0.6 : 1,
+          }}
+        >
+          {isLoading ? 'Загрузка...' : 'В процессе'}
+        </button>
+        <button
+          onClick={() => handleStatusChange('completed')}
+          disabled={isLoading}
+          style={{
+            padding: '5px 10px',
+            background: '#4CAF50',
+            color: 'white',
+            border: 'none',
+            borderRadius: '5px',
+            cursor: isLoading ? 'not-allowed' : 'pointer',
+            fontSize: '12px',
+            opacity: isLoading ? 0.6 : 1,
+          }}
+        >
+          {isLoading ? 'Загрузка...' : 'Завершено'}
+        </button>
+        <button
+          onClick={() => handleStatusChange('problem')}
+          disabled={isLoading}
+          style={{
+            padding: '5px 10px',
+            background: '#F44336',
+            color: 'white',
+            border: 'none',
+            borderRadius: '5px',
+            cursor: isLoading ? 'not-allowed' : 'pointer',
+            fontSize: '12px',
+            opacity: isLoading ? 0.6 : 1,
+          }}
+        >
+          {isLoading ? 'Загрузка...' : 'Проблема'}
+        </button>
+      </div>
+      {error && (
+        <div
+          style={{
+            color: '#F44336',
+            fontSize: '12px',
+            marginTop: '10px',
+            padding: '8px',
+            background: '#ffebee',
+            borderRadius: '4px',
+          }}
+        >
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
+
+
+
+
+
+
+
+
+
+

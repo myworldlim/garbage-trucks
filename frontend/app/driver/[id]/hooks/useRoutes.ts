@@ -1,3 +1,4 @@
+//frontend\app\driver\[id]\hooks\useRoutes.ts
 import { useEffect, useState } from 'react';
 
 interface Route {
@@ -29,7 +30,6 @@ export const useRoutes = (driverId: string | string[] | undefined) => {
 
   const fetchData = () => {
     if (!driverId) return;
-
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
     fetch(`${apiUrl}/api/routes?driver_id=${driverId}`)
       .then((res) => {
@@ -47,13 +47,13 @@ export const useRoutes = (driverId: string | string[] | undefined) => {
   };
 
   useEffect(() => {
-    fetchData(); // Первичная загрузка
-
+    fetchData();
     const interval = setInterval(() => {
-      fetchData(); // Автообновление каждые 60 секунд
+      if (navigator.onLine) {
+        fetchData();
+      }
     }, 60000);
-
-    return () => clearInterval(interval); // Очистка при размонтировании
+    return () => clearInterval(interval);
   }, [driverId]);
 
   const updateStatus = async (routeId: number, status: string) => {
@@ -61,17 +61,13 @@ export const useRoutes = (driverId: string | string[] | undefined) => {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
       const response = await fetch(
         `${apiUrl}/api/routes/status?route_id=${routeId}&status=${status}`,
-        {
-          method: 'POST',
-        }
+        { method: 'POST' }
       );
-      
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`Error updating status: ${response.status} ${errorText}`);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
       if (data) {
         setData({
           ...data,
@@ -80,9 +76,15 @@ export const useRoutes = (driverId: string | string[] | undefined) => {
       }
     } catch (err) {
       console.error('Error updating status:', err);
-      throw err; // Re-throw для обработки в компоненте
+      throw err;
     }
   };
 
-  return { data, loading, updateStatus };
+  const refresh = () => {
+    if (navigator.onLine) {
+      fetchData();
+    }
+  };
+
+  return { data, loading, updateStatus, refresh };
 };
