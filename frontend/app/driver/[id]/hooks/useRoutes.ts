@@ -1,17 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-
-interface Route {
-  id: number;
-  order_number: number;
-  scheduled_at: string;
-  status: string;
-  point: {
-    name: string;
-    address: string;
-    latitude: number;
-    longitude: number;
-  };
-}
+import { Route } from '@/types/route';
 
 interface Driver {
   id: number;

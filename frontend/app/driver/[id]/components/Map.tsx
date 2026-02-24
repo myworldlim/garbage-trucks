@@ -5,6 +5,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { LatLngExpression, Map as LeafletMap } from 'leaflet';
+import { Route } from '@/types/route';
 
 // Фикс иконок Leaflet (только на клиенте)
 if (typeof window !== 'undefined') {
@@ -14,19 +15,6 @@ if (typeof window !== 'undefined') {
     iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
     shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
   });
-}
-
-interface Route {
-  id: number;
-  order_number: number;
-  status: string;
-  point: {
-    name: string;
-    address: string;
-    latitude: number;
-    longitude: number;
-    city: string;
-  };
 }
 
 interface MapProps {
@@ -124,7 +112,7 @@ function MapInner({
                 {route.point.name}
               </strong>
               <span style={{ color: '#666', fontSize: '10px', display: 'block', marginBottom: '1px' }}>
-                город {route.point.city}
+                {route.point.city}
               </span>
               <div style={{ marginBottom: '1px' }}>
                 Статус:{' '}

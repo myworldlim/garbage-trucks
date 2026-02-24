@@ -7,25 +7,14 @@ import dynamic from 'next/dynamic';
 import { useGeolocation } from './hooks/useGeolocation';
 import { useRoutes } from './hooks/useRoutes';
 import { getStatusText, getStatusColor } from './utils/statusHelpers';
+import { Route } from '@/types/route';
 
 const MapContainer = dynamic(
   () => import('./components/Map').then(mod => mod.Map),
   { ssr: false, loading: () => <div className="loading">Загрузка карты...</div> }
 );
 
-interface Route {
-  id: number;
-  order_number: number;
-  scheduled_at: string;
-  status: string;
-  point: {
-    name: string;
-    address: string;
-    latitude: number;
-    longitude: number;
-    city: string;
-  };
-}
+
 
 export default function DriverPage() {
   const params = useParams();

@@ -286,7 +286,7 @@ export default function PointsPage() {
                 ✏️
               </button>
               <h3>{point.name}</h3>
-              <p style={{ color: '#666', margin: '5px 0' }}>{point.address}</p>
+              <p style={{ color: '#666', margin: '5px 0' }}>{point.city}</p>
               <p style={{ fontSize: '14px', color: '#999' }}>
                 📍 {point.latitude.toFixed(4)}, {point.longitude.toFixed(4)}
               </p>
@@ -408,7 +408,7 @@ export default function PointsPage() {
               }}
             />
             <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Водители (необязательно)</label>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Выбрать водителя</label>
               <div style={{ border: '2px solid #ddd', borderRadius: '8px', padding: '10px', maxHeight: '150px', overflowY: 'auto' }}>
                 {drivers.map(driver => (
                   <label key={driver.id} style={{ display: 'block', padding: '5px', cursor: 'pointer' }}>
