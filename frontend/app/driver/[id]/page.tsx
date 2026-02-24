@@ -246,7 +246,7 @@ export default function DriverPage() {
           📋
         </button>
 
-        {/* МОДАЛЬНОЕ ОКНО - список ВСЕХ точек */}
+        {/* МОДАЛЬНОЕ ОКНО - список ВСЕХ точек с сортировкой по городам */}
         {showModal && (
           <div
             style={{
@@ -288,7 +288,7 @@ export default function DriverPage() {
                   zIndex: 1,
                 }}
               >
-                <h2 style={{ margin: 0 }}>Все точки сбора</h2>
+                <h2 style={{ margin: 0 }}>Выберите точки сбора</h2>
                 <button onClick={() => setShowModal(false)} style={{ background: 'transparent', border: 'none', fontSize: '24px', cursor: 'pointer' }}>
                   ×
                 </button>
@@ -298,107 +298,151 @@ export default function DriverPage() {
                 {pointsLoading ? (
                   <div style={{ textAlign: 'center', padding: '20px', color: '#666' }}>Загрузка точек...</div>
                 ) : allPoints.length > 0 ? (
-                  allPoints.map((point) => {
-                    const isInRoute = routePointIds.has(point.id);
-                    
-                    return (
-                      <div
-                        key={point.id}
-                        style={{
-                          padding: '15px',
-                          margin: '10px',
-                          background: '#f9f9f9',
-                          borderRadius: '8px',
-                          borderLeft: `4px solid ${isInRoute ? '#4CAF50' : '#9E9E9E'}`,
-                          transition: 'all 0.2s',
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <div style={{ flex: 1 }}>
-                            <h3 style={{ margin: '0 0 5px 0', fontSize: '16px' }}>
-                              {point.name}
-                            </h3>
-                            <p style={{ fontSize: '12px', color: '#999', margin: 0 }}>
-                              г. {point.city}
-                            </p>
-                          </div>
-                          
-                          {/* Статус добавления */}
-                          <div
-                            style={{
-                              padding: '4px 12px',
-                              borderRadius: '20px',
-                              background: isInRoute ? '#4CAF50' : '#9E9E9E',
-                              color: 'white',
-                              fontSize: '10px',
-                              fontWeight: 'bold',
-                              whiteSpace: 'nowrap',
-                              marginLeft: '10px',
-                            }}
-                          >
-                            {isInRoute ? 'Добавлено' : 'Не добавлено'}
-                          </div>
+                  // 👇 Группируем точки по городам
+                  Object.entries(
+                    allPoints.reduce((acc, point) => {
+                      const city = point.city || 'Другие';
+                      if (!acc[city]) acc[city] = [];
+                      acc[city].push(point);
+                      return acc;
+                    }, {} as Record<string, typeof allPoints>)
+                  )
+                    .sort(([cityA], [cityB]) => cityA.localeCompare(cityB, 'ru')) // Сортируем города по алфавиту
+                    .map(([city, cityPoints]) => (
+                      <div key={city}>
+                        {/* Заголовок города */}
+                        <div
+                          style={{
+                            padding: '8px 15px',
+                            margin: '15px 0 5px 0',
+                            background: '#e0e0e0',
+                            borderRadius: '20px',
+                            fontWeight: 'bold',
+                            fontSize: '14px',
+                            color: '#333',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <span>{city}</span>
+                          <span style={{ 
+                            background: '#9e9e9e', 
+                            color: 'white', 
+                            padding: '2px 8px', 
+                            borderRadius: '12px',
+                            fontSize: '12px'
+                          }}>
+                            {cityPoints.length}
+                          </span>
                         </div>
 
-                        {/* Кнопка действия */}
-                        <div style={{ marginTop: '15px' }}>
-                          {isInRoute ? (
-                            <button
-                              onClick={async () => {
-                                try {
-                                  await removePointFromRoute(point.id);
-                                } catch (err) {
-                                  alert('Ошибка при удалении точки');
-                                }
-                              }}
+                        {/* Точки этого города */}
+                        {cityPoints.map((point) => {
+                          const isInRoute = routePointIds.has(point.id);
+                          
+                          return (
+                            <div
+                              key={point.id}
                               style={{
-                                width: '100%',
-                                padding: '7px',
-                                background: '#a30b00',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '6px',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                fontWeight: 'bold',
-                                transition: 'background 0.2s',
+                                padding: '15px',
+                                margin: '10px',
+                                background: '#f9f9f9',
+                                borderRadius: '8px',
+                                borderLeft: `4px solid ${isInRoute ? '#4CAF50' : '#9E9E9E'}`,
+                                transition: 'all 0.2s',
                               }}
-                              onMouseEnter={(e) => e.currentTarget.style.background = '#975656'}
-                              onMouseLeave={(e) => e.currentTarget.style.background = '#a30b00'}
                             >
-                              Удалить из маршрута
-                            </button>
-                          ) : (
-                            <button
-                              onClick={async () => {
-                                try {
-                                  await addPointToRoute(point.id);
-                                } catch (err) {
-                                  alert('Ошибка при добавлении точки');
-                                }
-                              }}
-                              style={{
-                                width: '100%',
-                                padding: '7px',
-                                background: '#4CAF50',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '6px',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                fontWeight: 'bold',
-                                transition: 'background 0.2s',
-                              }}
-                              onMouseEnter={(e) => e.currentTarget.style.background = '#45A049'}
-                              onMouseLeave={(e) => e.currentTarget.style.background = '#4CAF50'}
-                            >
-                              Добавить в маршрут
-                            </button>
-                          )}
-                        </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div style={{ flex: 1 }}>
+                                  <h3 style={{ margin: '0 0 5px 0', fontSize: '16px' }}>
+                                    {point.name}
+                                  </h3>
+                                  <p style={{ fontSize: '12px', color: '#999', margin: 0 }}>
+                                    г. {point.city}
+                                  </p>
+                                </div>
+                                
+                                {/* Статус добавления */}
+                                <div
+                                  style={{
+                                    padding: '4px 12px',
+                                    borderRadius: '20px',
+                                    background: isInRoute ? '#4CAF50' : '#9E9E9E',
+                                    color: 'white',
+                                    fontSize: '10px',
+                                    fontWeight: 'bold',
+                                    whiteSpace: 'nowrap',
+                                    marginLeft: '10px',
+                                  }}
+                                >
+                                  {isInRoute ? 'Добавлено' : 'Не добавлено'}
+                                </div>
+                              </div>
+
+                              {/* Кнопка действия */}
+                              <div style={{ marginTop: '15px' }}>
+                                {isInRoute ? (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await removePointFromRoute(point.id);
+                                      } catch (err) {
+                                        alert('Ошибка при удалении точки');
+                                      }
+                                    }}
+                                    style={{
+                                      width: '100%',
+                                      padding: '7px',
+                                      background: '#a30b00',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '6px',
+                                      cursor: 'pointer',
+                                      fontSize: '12px',
+                                      fontWeight: 'bold',
+                                      transition: 'background 0.2s',
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.background = '#975656'}
+                                    onMouseLeave={(e) => e.currentTarget.style.background = '#a30b00'}
+                                  >
+                                    Удалить из маршрута
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await addPointToRoute(point.id);
+                                      } catch (err) {
+                                        alert('Ошибка при добавлении точки');
+                                      }
+                                    }}
+                                    style={{
+                                      width: '100%',
+                                      padding: '7px',
+                                      background: '#4CAF50',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '6px',
+                                      cursor: 'pointer',
+                                      fontSize: '12px',
+                                      fontWeight: 'bold',
+                                      transition: 'background 0.2s',
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.background = '#45A049'}
+                                    onMouseLeave={(e) => e.currentTarget.style.background = '#4CAF50'}
+                                  >
+                                    Добавить в маршрут
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })
+                    ))
                 ) : (
                   <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
                     Нет доступных точек
