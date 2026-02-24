@@ -25,6 +25,7 @@ interface Route {
     address: string;
     latitude: number;
     longitude: number;
+    city: string;
   };
 }
 
@@ -37,34 +38,23 @@ interface MapProps {
   getStatusColor: (status: string) => string;
 }
 
-// Внутренний компонент, где можно безопасно использовать useMap()
+// Внутренний компонент (где безопасно использовать useMap)
 function MapInner({
   routes,
   userLocation,
   followMode,
+  onStatusUpdate,
   getStatusText,
   getStatusColor,
-  forwardedRef,
 }: {
   routes: Route[];
   userLocation: { lat: number; lon: number } | null;
   followMode: boolean;
+  onStatusUpdate?: (routeId: number, status: string) => void;
   getStatusText: (status: string) => string;
   getStatusColor: (status: string) => string;
-  forwardedRef: React.ForwardedRef<LeafletMap | null>;
 }) {
-  const map = useMap(); // Теперь это безопасно — внутри MapContainer
-
-  // Сохраняем ref на карту
-  useEffect(() => {
-    if (forwardedRef) {
-      if (typeof forwardedRef === 'function') {
-        forwardedRef(map);
-      } else {
-        forwardedRef.current = map;
-      }
-    }
-  }, [map, forwardedRef]);
+  const map = useMap();
 
   // Следим за позицией пользователя
   const lastLocationRef = useRef<{ lat: number; lon: number } | null>(null);
@@ -129,19 +119,70 @@ function MapInner({
           icon={getCustomIcon(route.status)}
         >
           <Popup>
-            <div style={{ minWidth: '220px' }}>
-              <strong style={{ fontSize: '16px' }}>
-                #{route.order_number} {route.point.name}
+            <div style={{ minWidth: 'auto', textAlign: 'center' }}>
+              <strong style={{ fontSize: '16px', display: 'block', marginBottom: '1px' }}>
+                {route.point.name}
               </strong>
-              <br />
-              <span style={{ color: '#666', fontSize: '13px' }}>
-                {route.point.address}
+              <span style={{ color: '#666', fontSize: '10px', display: 'block', marginBottom: '1px' }}>
+                город {route.point.city}
               </span>
-              <div style={{ marginTop: '8px', padding: '5px', background: '#f5f5f5', borderRadius: '4px' }}>
+              <div style={{ marginBottom: '1px' }}>
                 Статус:{' '}
                 <strong style={{ color: getStatusColor(route.status) }}>
                   {getStatusText(route.status)}
                 </strong>
+              </div>
+              {/* Две кнопки для изменения статуса */}
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '3em' }}>
+                {/* Кнопка "Завершено" */}
+                <button
+                  onClick={() => {
+                    const newStatus = route.status === 'completed' ? 'pending' : 'completed';
+                    onStatusUpdate?.(route.id, newStatus);
+                  }}
+                  style={{
+                    width: '1.5em',
+                    height: '1.5em',
+                    borderRadius: '50%',
+                    background: route.status === 'completed' ? '#81C784' : '#E8F5E9', // светлее/темнее
+                    border: '2px solid #4CAF50',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '20px',
+                    color: '#4CAF50',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+                  }}
+                  title={route.status === 'completed' ? 'Вернуть в ожидание' : 'Завершено'}
+                >
+                </button>
+
+                {/* Кнопка "Проблема" */}
+                <button
+                  onClick={() => {
+                    const newStatus = route.status === 'problem' ? 'pending' : 'problem';
+                    onStatusUpdate?.(route.id, newStatus);
+                  }}
+                  style={{
+                    width: '1.5em',
+                    height: '1.5em',
+                    borderRadius: '50%',
+                    background: route.status === 'problem' ? '#EF9A9A' : '#FFEBEE',
+                    border: '2px solid #F44336',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '20px',
+                    color: '#F44336',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+                  }}
+                  title={route.status === 'problem' ? 'Вернуть в ожидание' : 'Проблема'}
+                >
+                </button>
               </div>
             </div>
           </Popup>
@@ -174,8 +215,7 @@ function MapInner({
               iconAnchor: [10, 10],
             })
           }
-        >
-        </Marker>
+        />
       )}
     </>
   );
@@ -183,7 +223,7 @@ function MapInner({
 
 // Корневой компонент
 export const Map = forwardRef<LeafletMap | null, MapProps>(
-  ({ routes, userLocation, followMode, getStatusText, getStatusColor }, ref) => {
+  ({ routes, userLocation, followMode, onStatusUpdate, getStatusText, getStatusColor }, ref) => {
     const defaultCenter: LatLngExpression = [54.7, 39.79] as const;
 
     const center: LatLngExpression = userLocation
@@ -192,8 +232,22 @@ export const Map = forwardRef<LeafletMap | null, MapProps>(
       ? [routes[0].point.latitude, routes[0].point.longitude] as const
       : defaultCenter;
 
+    const mapRef = useRef<LeafletMap | null>(null);
+
+    // Сохраняем ref на карту (если родитель хочет)
+    useEffect(() => {
+      if (ref && mapRef.current) {
+        if (typeof ref === 'function') {
+          ref(mapRef.current);
+        } else {
+          (ref as React.MutableRefObject<LeafletMap | null>).current = mapRef.current;
+        }
+      }
+    }, [ref]);
+
     return (
       <MapContainer
+        ref={mapRef}
         center={center}
         zoom={12}
         style={{ width: '100%', height: '100%' }}
@@ -202,9 +256,9 @@ export const Map = forwardRef<LeafletMap | null, MapProps>(
           routes={routes}
           userLocation={userLocation}
           followMode={followMode}
+          onStatusUpdate={onStatusUpdate}
           getStatusText={getStatusText}
           getStatusColor={getStatusColor}
-          forwardedRef={ref}
         />
       </MapContainer>
     );

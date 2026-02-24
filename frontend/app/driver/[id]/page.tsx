@@ -23,6 +23,7 @@ interface Route {
     address: string;
     latitude: number;
     longitude: number;
+    city: string;
   };
 }
 
@@ -132,7 +133,7 @@ export default function DriverPage() {
               {data?.driver?.name || 'Водитель'}
             </h2>
             <p style={{ margin: 0, fontSize: '0.95rem', opacity: 0.9 }}>
-              📍 {data?.routes?.length || 0} точек
+              {data?.routes?.length || 0} точек
             </p>
           </div>
           <button
@@ -206,7 +207,7 @@ export default function DriverPage() {
           <div style={{
             position: 'fixed',
             right: '20px',
-            top: 'calc(50% + 70px)',
+            top: 'calc(50%)',
             zIndex: 1000,
           }}>
             <button
@@ -220,12 +221,12 @@ export default function DriverPage() {
               }}
               className={`map-control-btn ${followMode ? 'pulse-animation' : ''}`}
               style={{
-                background: followMode ? '#F44336' : '#9E9E9E',
+                background: followMode ? '#F44336' : '#c7c7c7',
                 color: 'white',
                 border: followMode ? '3px solid #ffffff' : 'none',
               }}
             >
-              🎯
+              
             </button>
           </div>
         </div>

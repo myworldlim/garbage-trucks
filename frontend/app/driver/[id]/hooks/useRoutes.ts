@@ -1,5 +1,4 @@
-//frontend\app\driver\[id]\hooks\useRoutes.ts
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 
 interface Route {
   id: number;
@@ -27,53 +26,74 @@ interface RoutesResponse {
 export const useRoutes = (driverId: string | string[] | undefined) => {
   const [data, setData] = useState<RoutesResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchData = () => {
+  const fetchData = useCallback(async () => {
     if (!driverId) return;
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-    fetch(`${apiUrl}/api/routes?driver_id=${driverId}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        return res.json();
-      })
-      .then((responseData) => {
-        setData(responseData);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error('Error fetching routes:', err);
-        setLoading(false);
-      });
-  };
+    
+    try {
+      setError(null);
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/routes?driver_id=${driverId}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const responseData = await response.json();
+      setData(responseData);
+    } catch (err) {
+      console.error('Error fetching routes:', err);
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  }, [driverId]);
 
   useEffect(() => {
     fetchData();
+    
     const interval = setInterval(() => {
       if (navigator.onLine) {
         fetchData();
       }
     }, 60000);
+    
     return () => clearInterval(interval);
-  }, [driverId]);
+  }, [fetchData]);
 
   const updateStatus = async (routeId: number, status: string) => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
       const response = await fetch(
         `${apiUrl}/api/routes/status?route_id=${routeId}&status=${status}`,
-        { method: 'POST' }
+        { 
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
       );
+      
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`Error updating status: ${response.status} ${errorText}`);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
+      
+      // Оптимистичное обновление UI
       if (data) {
         setData({
           ...data,
-          routes: data.routes.map((r) => (r.id === routeId ? { ...r, status } : r)),
+          routes: data.routes.map((r) => 
+            r.id === routeId ? { ...r, status } : r
+          ),
         });
       }
+      
+      // Обновляем данные с сервера для синхронизации
+      await fetchData();
+      
     } catch (err) {
       console.error('Error updating status:', err);
       throw err;
@@ -86,5 +106,5 @@ export const useRoutes = (driverId: string | string[] | undefined) => {
     }
   };
 
-  return { data, loading, updateStatus, refresh };
+  return { data, loading, error, updateStatus, refresh };
 };

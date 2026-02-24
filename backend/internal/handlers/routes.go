@@ -1,14 +1,12 @@
-//backend\internal\handlers\routes.go
 package handlers
 
 import (
-	"context"
 	"encoding/json"
-	"garbage_trucks/backend/internal/database"
-	"garbage_trucks/backend/internal/models"
 	"log"
 	"net/http"
 	"strconv"
+	
+	"garbage_trucks/backend/internal/models"
 )
 
 func GetRoutesHandler(w http.ResponseWriter, r *http.Request) {
@@ -25,14 +23,14 @@ func GetRoutesHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		driver, err := models.GetDriverByID(context.Background(), driverID)
+		driver, err := models.GetDriverByID(r.Context(), driverID)
 		if err != nil {
 			log.Printf("GetRoutesHandler: error getting driver: %v", err)
 			http.Error(w, "Ошибка получения водителя: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		routes, err := models.GetRoutesByDriverID(context.Background(), driverID)
+		routes, err := models.GetRoutesByDriverID(r.Context(), driverID)
 		if err != nil {
 			log.Printf("GetRoutesHandler: error getting routes: %v", err)
 			http.Error(w, "Ошибка получения маршрута: "+err.Error(), http.StatusInternalServerError)
@@ -58,7 +56,7 @@ func GetRoutesHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		routes, err := models.GetRoutesByPointID(context.Background(), pointID)
+		routes, err := models.GetRoutesByPointID(r.Context(), pointID)
 		if err != nil {
 			http.Error(w, "Ошибка получения маршрутов", http.StatusInternalServerError)
 			return
@@ -74,49 +72,38 @@ func GetRoutesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateRouteStatusHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" && r.Method != "PATCH" {
-		http.Error(w, "Метод не разрешён", http.StatusMethodNotAllowed)
-		return
-	}
+    // Разрешаем POST
+    if r.Method != "POST" {
+        http.Error(w, "Метод не разрешён", http.StatusMethodNotAllowed)
+        return
+    }
 
-	routeIDStr := r.URL.Query().Get("route_id")
-	status := r.URL.Query().Get("status")
+    routeIDStr := r.URL.Query().Get("route_id")
+    status := r.URL.Query().Get("status")
 
-	log.Printf("UpdateRouteStatusHandler: route_id=%s, status=%s", routeIDStr, status)
+    log.Printf("UpdateRouteStatusHandler: route_id=%s, status=%s", routeIDStr, status)
 
-	if routeIDStr == "" || status == "" {
-		http.Error(w, "route_id и status обязательны", http.StatusBadRequest)
-		return
-	}
+    if routeIDStr == "" || status == "" {
+        http.Error(w, "route_id и status обязательны", http.StatusBadRequest)
+        return
+    }
 
-	routeID, err := strconv.Atoi(routeIDStr)
-	if err != nil {
-		http.Error(w, "route_id должен быть числом", http.StatusBadRequest)
-		return
-	}
+    routeID, err := strconv.Atoi(routeIDStr)
+    if err != nil {
+        http.Error(w, "route_id должен быть числом", http.StatusBadRequest)
+        return
+    }
 
-	query := `
-	UPDATE routes
-	SET
-		status = $1,
-		completed_at = CASE WHEN $3 = 'completed' THEN CURRENT_TIMESTAMP ELSE completed_at END,
-		visited_at = CASE WHEN $3 IN ('in_progress', 'completed', 'problem') THEN COALESCE(visited_at, CURRENT_TIMESTAMP) ELSE visited_at END
-	WHERE id = $2
-	`
+    // ВЫЗЫВАЕМ МОДЕЛЬ
+    err = models.UpdateRouteStatus(r.Context(), routeID, status)
+    if err != nil {
+        log.Printf("UpdateRouteStatusHandler error: %v", err)
+        http.Error(w, "Ошибка обновления статуса: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
 
-	log.Printf("UpdateRouteStatus: routeID=%d, status=%s", routeID, status)
-
-	result, err := database.Pool.Exec(context.Background(), query, status, routeID, status)
-	if err != nil {
-		log.Printf("UpdateRouteStatus Exec error: %v", err)
-		http.Error(w, "Ошибка обновления статуса: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	log.Printf("UpdateRouteStatus result: RowsAffected=%d", result.RowsAffected())
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]string{"status": "success"}); err != nil {
-		http.Error(w, "Ошибка кодирования ответа", http.StatusInternalServerError)
-	}
+    // Успех
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }

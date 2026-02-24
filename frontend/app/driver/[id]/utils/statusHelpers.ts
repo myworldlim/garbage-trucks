@@ -1,18 +1,14 @@
-//frontend\app\driver\[id]\utils\statusHelpers.ts
+// frontend/app/driver/[id]/utils/statusHelpers.ts
 export const getStatusColor = (status: string): string => {
   switch (status) {
     case 'completed':
-      return '#4CAF50';
-    case 'in_progress':
-      return '#2196F3';
+      return '#4CAF50';      // зелёный — завершено
     case 'pending':
-      return '#FFC107';
-    case 'skipped':
-      return '#9E9E9E';
+      return '#9E9E9E';      // серый — ожидание (по умолчанию)
     case 'problem':
-      return '#F44336';
+      return '#F44336';      // красный — проблема
     default:
-      return '#666';
+      return '#d6d6d6';      // fallback на серый
   }
 };
 
@@ -20,15 +16,11 @@ export const getStatusText = (status: string): string => {
   switch (status) {
     case 'completed':
       return 'Завершено';
-    case 'in_progress':
-      return 'В процессе';
     case 'pending':
-      return 'Ожидает';
-    case 'skipped':
-      return 'Пропущено';
+      return 'Ожидание';
     case 'problem':
       return 'Проблема';
     default:
-      return status;
+      return 'Ожидание';
   }
 };

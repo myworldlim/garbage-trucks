@@ -33,6 +33,7 @@ func NewRouter() *mux.Router {
 	// Routes
 	r.HandleFunc("/api/routes", handlers.GetRoutesHandler).Methods("GET")
 	r.HandleFunc("/api/routes/status", handlers.UpdateRouteStatusHandler).Methods("POST", "PATCH")
+	// r.HandleFunc("/api/test/status", handlers.TestUpdateRouteStatusHandler).Methods("POST", "OPTIONS")
 
 	// OPTIONS для всех маршрутов (CORS preflight)
 	r.Methods("OPTIONS").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

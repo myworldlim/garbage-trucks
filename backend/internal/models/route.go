@@ -2,9 +2,10 @@
 
 import (
 	"context"
-	"garbage_trucks/backend/internal/database"
+	"fmt"
 	"log"
 	"time"
+	"garbage_trucks/backend/internal/database"
 )
 
 type Route struct {
@@ -70,28 +71,33 @@ func GetRoutesByDriverID(ctx context.Context, driverID int) ([]Route, error) {
 }
 
 func UpdateRouteStatus(ctx context.Context, routeID int, status string) error {
-query := `
-    UPDATE routes 
-    SET status = $1, 
-        completed_at = CASE WHEN $1 = 'completed' THEN CURRENT_TIMESTAMP ELSE completed_at END,
-        visited_at = CASE WHEN $1 IN ('in_progress', 'completed', 'problem') THEN COALESCE(visited_at, CURRENT_TIMESTAMP) ELSE visited_at END
-    WHERE id = $2
-`
-	log.Printf("UpdateRouteStatus: routeID=%d, status=%s, query=%s", routeID, status, query)
+    // Проверяем допустимые статусы
+    validStatuses := map[string]bool{
+        "pending":   true,
+        "completed": true,
+        "problem":   true,
+    }
+    
+    if !validStatuses[status] {
+        return fmt.Errorf("недопустимый статус: %s", status)
+    }
 
-	result, err := database.Pool.Exec(ctx, query, status, routeID)
-	if err != nil {
-		log.Printf("UpdateRouteStatus Exec error: %v", err)
-		return err
-	}
+    // Простой запрос - триггер сам обновит updated_at
+    query := `UPDATE routes SET status = $1 WHERE id = $2`
 
-	log.Printf("UpdateRouteStatus result: RowsAffected=%d", result.RowsAffected())
+    log.Printf("Updating route %d to status %s", routeID, status)
 
-	if result.RowsAffected() == 0 {
-		log.Printf("UpdateRouteStatus: No rows affected for routeID=%d", routeID)
-	}
+    result, err := database.Pool.Exec(ctx, query, status, routeID)
+    if err != nil {
+        log.Printf("Database error: %v", err)
+        return err
+    }
 
-	return nil
+    if result.RowsAffected() == 0 {
+        return fmt.Errorf("маршрут с ID %d не найден", routeID)
+    }
+
+    return nil
 }
 
 func GetRoutesByPointID(ctx context.Context, pointID int) ([]Route, error) {

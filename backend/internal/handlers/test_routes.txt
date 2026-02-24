@@ -1,0 +1,98 @@
+// package handlers
+
+// import (
+// 	"encoding/json"
+// 	"log"
+// 	"net/http"
+// 	"strconv"
+	
+// 	"garbage_trucks/backend/internal/database"
+// )
+
+// // Простой тестовый хендлер без моделей
+// func TestUpdateRouteStatusHandler(w http.ResponseWriter, r *http.Request) {
+//     if r.Method != "POST" {
+//         http.Error(w, "Метод не разрешён", http.StatusMethodNotAllowed)
+//         return
+//     }
+
+//     routeIDStr := r.URL.Query().Get("route_id")
+//     status := r.URL.Query().Get("status")
+
+//     log.Printf("TEST HANDLER: route_id=%s, status=%s", routeIDStr, status)
+
+//     if routeIDStr == "" || status == "" {
+//         http.Error(w, "route_id и status обязательны", http.StatusBadRequest)
+//         return
+//     }
+
+//     routeID, err := strconv.Atoi(routeIDStr)
+//     if err != nil {
+//         http.Error(w, "route_id должен быть числом", http.StatusBadRequest)
+//         return
+//     }
+
+//     // 1. Сначала проверим, есть ли такая запись
+//     var exists bool
+//     checkQuery := `SELECT EXISTS(SELECT 1 FROM routes WHERE id = $1)`
+//     err = database.Pool.QueryRow(r.Context(), checkQuery, routeID).Scan(&exists)
+//     if err != nil {
+//         log.Printf("Check error: %v", err)
+//         http.Error(w, "Ошибка проверки записи", http.StatusInternalServerError)
+//         return
+//     }
+
+//     if !exists {
+//         http.Error(w, "Маршрут не найден", http.StatusNotFound)
+//         return
+//     }
+
+//     // 2. Попробуем обновить разными способами
+
+//     // СПОСОБ 1: Простой UPDATE
+//     query1 := `UPDATE routes SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`
+//     result1, err1 := database.Pool.Exec(r.Context(), query1, status, routeID)
+//     if err1 == nil && result1.RowsAffected() > 0 {
+//         log.Printf("СПОСОБ 1 сработал! rows: %d", result1.RowsAffected())
+//         w.Header().Set("Content-Type", "application/json")
+//         json.NewEncoder(w).Encode(map[string]string{"status": "success", "method": "simple"})
+//         return
+//     }
+//     log.Printf("СПОСОБ 1 ошибка: %v", err1)
+
+//     // СПОСОБ 2: С приведением типов
+//     query2 := `UPDATE routes SET status = $1::varchar(20), updated_at = CURRENT_TIMESTAMP WHERE id = $2`
+//     result2, err2 := database.Pool.Exec(r.Context(), query2, status, routeID)
+//     if err2 == nil && result2.RowsAffected() > 0 {
+//         log.Printf("СПОСОБ 2 сработал! rows: %d", result2.RowsAffected())
+//         w.Header().Set("Content-Type", "application/json")
+//         json.NewEncoder(w).Encode(map[string]string{"status": "success", "method": "cast"})
+//         return
+//     }
+//     log.Printf("СПОСОБ 2 ошибка: %v", err2)
+
+//     // СПОСОБ 3: С использованием text
+//     query3 := `UPDATE routes SET status = $1::text, updated_at = CURRENT_TIMESTAMP WHERE id = $2`
+//     result3, err3 := database.Pool.Exec(r.Context(), query3, status, routeID)
+//     if err3 == nil && result3.RowsAffected() > 0 {
+//         log.Printf("СПОСОБ 3 сработал! rows: %d", result3.RowsAffected())
+//         w.Header().Set("Content-Type", "application/json")
+//         json.NewEncoder(w).Encode(map[string]string{"status": "success", "method": "text"})
+//         return
+//     }
+//     log.Printf("СПОСОБ 3 ошибка: %v", err3)
+
+//     // СПОСОБ 4: Без использования updated_at
+//     query4 := `UPDATE routes SET status = $1 WHERE id = $2`
+//     result4, err4 := database.Pool.Exec(r.Context(), query4, status, routeID)
+//     if err4 == nil && result4.RowsAffected() > 0 {
+//         log.Printf("СПОСОБ 4 сработал! rows: %d", result4.RowsAffected())
+//         w.Header().Set("Content-Type", "application/json")
+//         json.NewEncoder(w).Encode(map[string]string{"status": "success", "method": "no_timestamp"})
+//         return
+//     }
+//     log.Printf("СПОСОБ 4 ошибка: %v", err4)
+
+//     // Если ничего не сработало
+//     http.Error(w, "Все способы обновления не сработали", http.StatusInternalServerError)
+// }
