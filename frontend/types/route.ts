@@ -4,6 +4,7 @@ export interface Route {
   scheduled_at: string;
   status: string;
   point: {
+    id: number;
     name: string;
     address: string;
     latitude: number;

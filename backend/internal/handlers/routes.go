@@ -107,3 +107,87 @@ func UpdateRouteStatusHandler(w http.ResponseWriter, r *http.Request) {
     w.WriteHeader(http.StatusOK)
     json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
+
+// AddRoutePointHandler - добавить точку в маршрут водителя
+func AddRoutePointHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != "POST" {
+        http.Error(w, "Метод не разрешён", http.StatusMethodNotAllowed)
+        return
+    }
+
+    driverIDStr := r.URL.Query().Get("driver_id")
+    pointIDStr := r.URL.Query().Get("point_id")
+
+    log.Printf("AddRoutePointHandler: driver_id=%s, point_id=%s", driverIDStr, pointIDStr)
+
+    if driverIDStr == "" || pointIDStr == "" {
+        http.Error(w, "driver_id и point_id обязательны", http.StatusBadRequest)
+        return
+    }
+
+    driverID, err := strconv.Atoi(driverIDStr)
+    if err != nil {
+        http.Error(w, "driver_id должен быть числом", http.StatusBadRequest)
+        return
+    }
+
+    pointID, err := strconv.Atoi(pointIDStr)
+    if err != nil {
+        http.Error(w, "point_id должен быть числом", http.StatusBadRequest)
+        return
+    }
+
+    // Вызываем модель для добавления точки
+    err = models.AddRoutePoint(r.Context(), driverID, pointID)
+    if err != nil {
+        log.Printf("AddRoutePointHandler error: %v", err)
+        http.Error(w, "Ошибка добавления точки: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+// RemoveRoutePointHandler - удалить точку из маршрута водителя
+func RemoveRoutePointHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != "DELETE" {
+        http.Error(w, "Метод не разрешён", http.StatusMethodNotAllowed)
+        return
+    }
+
+    driverIDStr := r.URL.Query().Get("driver_id")
+    pointIDStr := r.URL.Query().Get("point_id")
+
+    log.Printf("RemoveRoutePointHandler: driver_id=%s, point_id=%s", driverIDStr, pointIDStr)
+
+    if driverIDStr == "" || pointIDStr == "" {
+        http.Error(w, "driver_id и point_id обязательны", http.StatusBadRequest)
+        return
+    }
+
+    driverID, err := strconv.Atoi(driverIDStr)
+    if err != nil {
+        http.Error(w, "driver_id должен быть числом", http.StatusBadRequest)
+        return
+    }
+
+    pointID, err := strconv.Atoi(pointIDStr)
+    if err != nil {
+        http.Error(w, "point_id должен быть числом", http.StatusBadRequest)
+        return
+    }
+
+    // Вызываем модель для удаления точки
+    err = models.RemoveRoutePoint(r.Context(), driverID, pointID)
+    if err != nil {
+        log.Printf("RemoveRoutePointHandler error: %v", err)
+        http.Error(w, "Ошибка удаления точки: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}

@@ -94,5 +94,76 @@ export const useRoutes = (driverId: string | string[] | undefined) => {
     }
   };
 
-  return { data, loading, error, updateStatus, refresh };
+// Добавим новые функции в хук
+
+const addPointToRoute = async (pointId: number) => {
+  if (!driverId) return;
+  
+  try {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    const response = await fetch(
+      `${apiUrl}/api/routes/add?driver_id=${driverId}&point_id=${pointId}`,
+      { 
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Error adding point: ${response.status} ${errorText}`);
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    // Обновляем данные
+    await fetchData();
+    
+  } catch (err) {
+    console.error('Error adding point:', err);
+    throw err;
+  }
+};
+
+const removePointFromRoute = async (pointId: number) => {
+  if (!driverId) return;
+  
+  try {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    const response = await fetch(
+      `${apiUrl}/api/routes/remove?driver_id=${driverId}&point_id=${pointId}`,
+      { 
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Error removing point: ${response.status} ${errorText}`);
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    // Обновляем данные
+    await fetchData();
+    
+  } catch (err) {
+    console.error('Error removing point:', err);
+    throw err;
+  }
+};
+
+// Добавим в return
+return { 
+  data, 
+  loading, 
+  error, 
+  updateStatus, 
+  refresh,
+  addPointToRoute,
+  removePointFromRoute 
+};
 };

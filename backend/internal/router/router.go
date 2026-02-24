@@ -35,6 +35,10 @@ func NewRouter() *mux.Router {
 	r.HandleFunc("/api/routes/status", handlers.UpdateRouteStatusHandler).Methods("POST", "PATCH")
 	// r.HandleFunc("/api/test/status", handlers.TestUpdateRouteStatusHandler).Methods("POST", "OPTIONS")
 
+	// НОВЫЕ МАРШРУТЫ для добавления/удаления точек
+	r.HandleFunc("/api/routes/add", handlers.AddRoutePointHandler).Methods("POST", "OPTIONS")
+	r.HandleFunc("/api/routes/remove", handlers.RemoveRoutePointHandler).Methods("DELETE", "OPTIONS")
+
 	// OPTIONS для всех маршрутов (CORS preflight)
 	r.Methods("OPTIONS").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

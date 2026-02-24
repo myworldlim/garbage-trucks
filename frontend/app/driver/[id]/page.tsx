@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useGeolocation } from './hooks/useGeolocation';
 import { useRoutes } from './hooks/useRoutes';
+import { useAllPoints } from './hooks/useAllPoints'; // 👈 Новый хук
 import { getStatusText, getStatusColor } from './utils/statusHelpers';
 import { Route } from '@/types/route';
 
@@ -13,8 +14,6 @@ const MapContainer = dynamic(
   () => import('./components/Map').then(mod => mod.Map),
   { ssr: false, loading: () => <div className="loading">Загрузка карты...</div> }
 );
-
-
 
 export default function DriverPage() {
   const params = useParams();
@@ -24,7 +23,8 @@ export default function DriverPage() {
   const mapRef = useRef<any>(null);
 
   const { userLocation, error: geoError, requestGeolocation } = useGeolocation();
-  const { data, loading, updateStatus, refresh } = useRoutes(params.id);
+  const { data, loading, updateStatus, refresh, addPointToRoute, removePointFromRoute } = useRoutes(params.id);
+  const { points: allPoints, loading: pointsLoading } = useAllPoints(); // 👈 Все точки из БД
 
   useEffect(() => {
     const updateOnlineStatus = () => setIsOnline(navigator.onLine);
@@ -60,6 +60,9 @@ export default function DriverPage() {
     }
   };
 
+  // Создаем Set с ID точек, которые уже есть в маршруте водителя
+  const routePointIds = new Set(data?.routes?.map(r => r.point.id) || []);
+
   if (loading) {
     return <div className="loading">Загрузка маршрутов...</div>;
   }
@@ -84,7 +87,7 @@ export default function DriverPage() {
   return (
     <>
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Header */}
+        {/* Header - без изменений */}
         <div
           style={{
             padding: '12px 20px',
@@ -145,7 +148,7 @@ export default function DriverPage() {
           </button>
         </div>
 
-        {/* Карта */}
+        {/* Карта - без изменений */}
         <div style={{ flex: 1, position: 'relative' }}>
           <MapContainer
             ref={mapRef}
@@ -157,7 +160,7 @@ export default function DriverPage() {
             getStatusColor={getStatusColor}
           />
 
-          {/* Индикатор онлайн/оффлайн и слежения - справа вверху */}
+          {/* Индикаторы - без изменений */}
           <div style={{
             position: 'fixed',
             top: '80px',
@@ -171,7 +174,6 @@ export default function DriverPage() {
             zIndex: 900,
             backdropFilter: 'blur(4px)',
           }}>
-            {/* Индикатор онлайн/оффлайн */}
             <div style={{
               width: '12px',
               height: '12px',
@@ -181,7 +183,6 @@ export default function DriverPage() {
               transition: 'background 0.3s',
             }} title={isOnline ? 'Онлайн' : 'Оффлайн'} />
             
-            {/* Индикатор слежения */}
             <div style={{
               width: '12px',
               height: '12px',
@@ -245,7 +246,7 @@ export default function DriverPage() {
           📋
         </button>
 
-        {/* Модальное окно списка маршрутов */}
+        {/* МОДАЛЬНОЕ ОКНО - список ВСЕХ точек */}
         {showModal && (
           <div
             style={{
@@ -267,7 +268,7 @@ export default function DriverPage() {
               style={{
                 background: 'white',
                 borderRadius: '12px',
-                width: '400px',
+                width: '450px',
                 maxHeight: '80vh',
                 overflow: 'auto',
                 boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
@@ -287,66 +288,121 @@ export default function DriverPage() {
                   zIndex: 1,
                 }}
               >
-                <h2 style={{ margin: 0 }}>Список точек</h2>
-                <button onClick={() => setShowModal(false)} style={{ background: 'transparent', border: 'none', fontSize: '24px', cursor: 'pointer' }}>×</button>
+                <h2 style={{ margin: 0 }}>Все точки сбора</h2>
+                <button onClick={() => setShowModal(false)} style={{ background: 'transparent', border: 'none', fontSize: '24px', cursor: 'pointer' }}>
+                  ×
+                </button>
               </div>
-              <div style={{ padding: '5px' }}>
-                {data?.routes && data.routes.length > 0 ? (
-                  data.routes.map((route) => (
-                    <div
-                      key={route.id}
-                      style={{
-                        padding: '15px',
-                        margin: '10px',
-                        background: '#f9f9f9',
-                        borderRadius: '8px',
-                        borderLeft: `4px solid ${getStatusColor(route.status)}`,
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '10px' }}>
-                        <div style={{ flex: 1 }}>
-                          <h3 style={{ margin: '0 0 5px 0', fontSize: '16px' }}>#{route.order_number} {route.point.name}</h3>
-                          <p style={{ color: '#666', margin: '0', fontSize: '14px' }}>{route.point.address}</p>
+              
+              <div style={{ padding: '10px' }}>
+                {pointsLoading ? (
+                  <div style={{ textAlign: 'center', padding: '20px', color: '#666' }}>Загрузка точек...</div>
+                ) : allPoints.length > 0 ? (
+                  allPoints.map((point) => {
+                    const isInRoute = routePointIds.has(point.id);
+                    
+                    return (
+                      <div
+                        key={point.id}
+                        style={{
+                          padding: '15px',
+                          margin: '10px',
+                          background: '#f9f9f9',
+                          borderRadius: '8px',
+                          borderLeft: `4px solid ${isInRoute ? '#4CAF50' : '#9E9E9E'}`,
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ flex: 1 }}>
+                            <h3 style={{ margin: '0 0 5px 0', fontSize: '16px' }}>
+                              {point.name}
+                            </h3>
+                            <p style={{ fontSize: '12px', color: '#999', margin: 0 }}>
+                              г. {point.city}
+                            </p>
+                          </div>
+                          
+                          {/* Статус добавления */}
+                          <div
+                            style={{
+                              padding: '4px 12px',
+                              borderRadius: '20px',
+                              background: isInRoute ? '#4CAF50' : '#9E9E9E',
+                              color: 'white',
+                              fontSize: '10px',
+                              fontWeight: 'bold',
+                              whiteSpace: 'nowrap',
+                              marginLeft: '10px',
+                            }}
+                          >
+                            {isInRoute ? 'Добавлено' : 'Не добавлено'}
+                          </div>
                         </div>
-                        <div
-                          style={{
-                            padding: '3px 10px',
-                            borderRadius: '12px',
-                            background: getStatusColor(route.status),
-                            color: 'white',
-                            fontSize: '12px',
-                            fontWeight: 'bold',
-                            whiteSpace: 'nowrap',
-                            marginLeft: '10px',
-                          }}
-                        >
-                          {getStatusText(route.status)}
+
+                        {/* Кнопка действия */}
+                        <div style={{ marginTop: '15px' }}>
+                          {isInRoute ? (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await removePointFromRoute(point.id);
+                                } catch (err) {
+                                  alert('Ошибка при удалении точки');
+                                }
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '7px',
+                                background: '#a30b00',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                fontWeight: 'bold',
+                                transition: 'background 0.2s',
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.background = '#975656'}
+                              onMouseLeave={(e) => e.currentTarget.style.background = '#a30b00'}
+                            >
+                              Удалить из маршрута
+                            </button>
+                          ) : (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await addPointToRoute(point.id);
+                                } catch (err) {
+                                  alert('Ошибка при добавлении точки');
+                                }
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '7px',
+                                background: '#4CAF50',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                fontWeight: 'bold',
+                                transition: 'background 0.2s',
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.background = '#45A049'}
+                              onMouseLeave={(e) => e.currentTarget.style.background = '#4CAF50'}
+                            >
+                              Добавить в маршрут
+                            </button>
+                          )}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                        <button
-                          onClick={() => updateStatus(route.id, 'in_progress')}
-                          style={{ padding: '5px 10px', background: '#2196F3', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '12px' }}
-                        >
-                          В процессе
-                        </button>
-                        <button
-                          onClick={() => updateStatus(route.id, 'completed')}
-                          style={{ padding: '5px 10px', background: '#4CAF50', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '12px' }}
-                        >
-                          Завершено
-                        </button>
-                        <button
-                          onClick={() => updateStatus(route.id, 'problem')}
-                          style={{ padding: '5px 10px', background: '#F44336', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '12px' }}
-                        >
-                          Проблема
-                        </button>
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
-                  <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>Нет точек для отображения</div>
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
+                    Нет доступных точек
+                  </div>
                 )}
               </div>
             </div>

@@ -129,3 +129,84 @@ func GetRoutesByPointID(ctx context.Context, pointID int) ([]Route, error) {
 
 	return routes, rows.Err()
 }
+
+// AddRoutePoint - добавить точку в маршрут водителя
+func AddRoutePoint(ctx context.Context, driverID, pointID int) error {
+    // Проверяем, существует ли уже такая точка у водителя
+    var exists bool
+    checkQuery := `SELECT EXISTS(SELECT 1 FROM routes WHERE driver_id = $1 AND point_id = $2)`
+    err := database.Pool.QueryRow(ctx, checkQuery, driverID, pointID).Scan(&exists)
+    if err != nil {
+        log.Printf("Error checking existing route: %v", err)
+        return err
+    }
+
+    if exists {
+        return fmt.Errorf("точка уже добавлена в маршрут водителя")
+    }
+
+    // Получаем следующий order_number для водителя
+    var maxOrder int
+    orderQuery := `SELECT COALESCE(MAX(order_number), 0) FROM routes WHERE driver_id = $1`
+    err = database.Pool.QueryRow(ctx, orderQuery, driverID).Scan(&maxOrder)
+    if err != nil {
+        log.Printf("Error getting max order: %v", err)
+        return err
+    }
+
+    newOrder := maxOrder + 1
+
+    // 👇 ИСПРАВЛЕННЫЙ ЗАПРОС - используем отдельные параметры
+    insertQuery := `
+        INSERT INTO routes (driver_id, point_id, order_number, scheduled_at, status)
+        VALUES ($1, $2, $3, CURRENT_DATE + TIME '08:00:00' + (INTERVAL '10 minutes' * $4), 'pending')
+    `
+    
+    log.Printf("Adding route: driver=%d, point=%d, order=%d", driverID, pointID, newOrder)
+    
+    // 👇 Передаем newOrder дважды: как число и как множитель для интервала
+    _, err = database.Pool.Exec(ctx, insertQuery, driverID, pointID, newOrder, newOrder)
+    if err != nil {
+        log.Printf("Error inserting route: %v", err)
+        return err
+    }
+
+    return nil
+}
+
+// RemoveRoutePoint - удалить точку из маршрута водителя
+func RemoveRoutePoint(ctx context.Context, driverID, pointID int) error {
+    // Удаляем точку из маршрута
+    deleteQuery := `DELETE FROM routes WHERE driver_id = $1 AND point_id = $2`
+    
+    result, err := database.Pool.Exec(ctx, deleteQuery, driverID, pointID)
+    if err != nil {
+        log.Printf("Error deleting route: %v", err)
+        return err
+    }
+
+    if result.RowsAffected() == 0 {
+        return fmt.Errorf("точка не найдена в маршруте водителя")
+    }
+
+    // Перенумеровываем order_number для оставшихся точек
+    reorderQuery := `
+        WITH numbered AS (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY order_number) as new_order
+            FROM routes
+            WHERE driver_id = $1
+        )
+        UPDATE routes r
+        SET order_number = n.new_order
+        FROM numbered n
+        WHERE r.id = n.id
+    `
+    
+    _, err = database.Pool.Exec(ctx, reorderQuery, driverID)
+    if err != nil {
+        log.Printf("Error reordering routes: %v", err)
+        // Не возвращаем ошибку, так как точка уже удалена
+    }
+
+    return nil
+}
