@@ -204,7 +204,6 @@ export default function DriverPage() {
     </span>
   </div>
 </div>
-
           {/* Индикаторы - без изменений */}
           <div style={{
             position: 'fixed',
