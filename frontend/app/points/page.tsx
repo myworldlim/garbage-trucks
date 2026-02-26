@@ -32,7 +32,7 @@ export default function PointsPage() {
     name: '',
     address: '',
     coordinates: '',
-    city: 'Рязань'
+    city: ''
   });
 
   useEffect(() => {
@@ -328,143 +328,170 @@ export default function PointsPage() {
         +
       </button>
 
-      {/* Модальное окно */}
-      {showModal && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 2000
-          }}
-          onClick={() => setShowModal(false)}
-        >
-          <div
-            style={{
-              background: 'white',
-              padding: '30px',
-              borderRadius: '12px',
-              width: '90%',
-              maxWidth: '500px',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.2)'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 style={{ marginBottom: '20px' }}>{editingPoint ? 'Редактировать точку' : 'Добавить точку сбора'}</h2>
-            <input
-              type="text"
-              placeholder="Название *"
-              value={newPoint.name}
-              onChange={(e) => setNewPoint({...newPoint, name: e.target.value})}
-              style={{
-                width: '100%',
-                padding: '12px',
-                fontSize: '16px',
-                border: '2px solid #ddd',
-                borderRadius: '8px',
-                marginBottom: '15px',
-                boxSizing: 'border-box'
-              }}
-            />
-            <input
-              type="text"
-              placeholder="Адрес заполняется по координатам"
-              value={newPoint.address}
-              onChange={(e) => setNewPoint({...newPoint, address: e.target.value})}
-              style={{
-                width: '100%',
-                padding: '12px',
-                fontSize: '14px',
-                border: '2px solid #ddd',
-                borderRadius: '8px',
-                marginBottom: '15px',
-                boxSizing: 'border-box'
-              }}
-            />
-            <input
-              type="text"
-              placeholder="Координаты (54.6269, 39.7464)"
-              value={newPoint.coordinates}
-              onChange={(e) => setNewPoint({...newPoint, coordinates: e.target.value})}
-              onBlur={(e) => {
-                if (e.target.value.trim() && !newPoint.address) {
-                  fetchAddressFromCoordinates(e.target.value);
-                }
-              }}
-              style={{
-                width: '100%',
-                padding: '12px',
-                fontSize: '14px',
-                border: '2px solid #ddd',
-                borderRadius: '8px',
-                marginBottom: '15px',
-                boxSizing: 'border-box'
-              }}
-            />
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Выбрать водителя</label>
-              <div style={{ border: '2px solid #ddd', borderRadius: '8px', padding: '10px', maxHeight: '150px', overflowY: 'auto' }}>
-                {drivers.map(driver => (
-                  <label key={driver.id} style={{ display: 'block', padding: '5px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedDrivers.includes(driver.id)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedDrivers([...selectedDrivers, driver.id]);
-                        } else {
-                          setSelectedDrivers(selectedDrivers.filter(id => id !== driver.id));
-                        }
-                      }}
-                      style={{ marginRight: '8px' }}
-                    />
-                    {driver.name}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                onClick={handleAddPoint}
-                className="btn"
-                style={{
-                  flex: 1,
-                  background: '#4CAF50',
-                  color: 'white',
-                  padding: '12px',
-                  fontSize: '16px'
+{/* Модальное окно */}
+{showModal && (
+  <div
+    style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0,0,0,0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 2000
+    }}
+    onClick={() => setShowModal(false)}
+  >
+    <div
+      style={{
+        background: 'white',
+        padding: '30px',
+        borderRadius: '12px',
+        width: '90%',
+        maxWidth: '500px',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.2)'
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <h2 style={{ marginBottom: '20px' }}>{editingPoint ? 'Редактировать точку' : 'Добавить точку сбора'}</h2>
+      
+      {/* Название */}
+      <input
+        type="text"
+        placeholder="Название *"
+        value={newPoint.name}
+        onChange={(e) => setNewPoint({...newPoint, name: e.target.value})}
+        style={{
+          width: '100%',
+          padding: '12px',
+          fontSize: '16px',
+          border: '2px solid #ddd',
+          borderRadius: '8px',
+          marginBottom: '15px',
+          boxSizing: 'border-box'
+        }}
+      />
+      
+      {/* Адрес */}
+      <input
+        type="text"
+        placeholder="Адрес"
+        value={newPoint.address}
+        onChange={(e) => setNewPoint({...newPoint, address: e.target.value})}
+        style={{
+          width: '100%',
+          padding: '12px',
+          fontSize: '14px',
+          border: '2px solid #ddd',
+          borderRadius: '8px',
+          marginBottom: '15px',
+          boxSizing: 'border-box'
+        }}
+      />
+      
+      {/* Координаты */}
+      <input
+        type="text"
+        placeholder="Координаты (54.6269, 39.7464)"
+        value={newPoint.coordinates}
+        onChange={(e) => setNewPoint({...newPoint, coordinates: e.target.value})}
+        onBlur={(e) => {
+          if (e.target.value.trim() && !newPoint.address) {
+            fetchAddressFromCoordinates(e.target.value);
+          }
+        }}
+        style={{
+          width: '100%',
+          padding: '12px',
+          fontSize: '14px',
+          border: '2px solid #ddd',
+          borderRadius: '8px',
+          marginBottom: '15px',
+          boxSizing: 'border-box'
+        }}
+      />
+      
+      {/* Город */}
+      <input
+        type="text"
+        placeholder="Город"
+        value={newPoint.city}
+        onChange={(e) => setNewPoint({...newPoint, city: e.target.value})}
+        style={{
+          width: '100%',
+          padding: '12px',
+          fontSize: '14px',
+          border: '2px solid #ddd',
+          borderRadius: '8px',
+          marginBottom: '15px',
+          boxSizing: 'border-box'
+        }}
+      />
+      
+      {/* Выбор водителей */}
+      <div style={{ marginBottom: '20px' }}>
+        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Выбрать водителя</label>
+        <div style={{ border: '2px solid #ddd', borderRadius: '8px', padding: '10px', maxHeight: '150px', overflowY: 'auto' }}>
+          {drivers.map(driver => (
+            <label key={driver.id} style={{ display: 'block', padding: '5px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={selectedDrivers.includes(driver.id)}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedDrivers([...selectedDrivers, driver.id]);
+                  } else {
+                    setSelectedDrivers(selectedDrivers.filter(id => id !== driver.id));
+                  }
                 }}
-              >
-                {editingPoint ? 'Сохранить' : 'Добавить'}
-              </button>
-              <button
-                onClick={() => {
-                  setShowModal(false);
-                  setEditingPoint(null);
-                  setSelectedDrivers([]);
-                  setNewPoint({ name: '', address: '', coordinates: '', city: 'Рязань' });
-                }}
-                className="btn"
-                style={{
-                  flex: 1,
-                  background: '#9E9E9E',
-                  color: 'white',
-                  padding: '12px',
-                  fontSize: '16px'
-                }}
-              >
-                Отмена
-              </button>
-            </div>
-          </div>
+                style={{ marginRight: '8px' }}
+              />
+              {driver.name}
+            </label>
+          ))}
         </div>
-      )}
+      </div>
+      
+      {/* Кнопки */}
+      <div style={{ display: 'flex', gap: '10px' }}>
+        <button
+          onClick={handleAddPoint}
+          className="btn"
+          style={{
+            flex: 1,
+            background: '#4CAF50',
+            color: 'white',
+            padding: '12px',
+            fontSize: '16px'
+          }}
+        >
+          {editingPoint ? 'Сохранить' : 'Добавить'}
+        </button>
+        <button
+          onClick={() => {
+            setShowModal(false);
+            setEditingPoint(null);
+            setSelectedDrivers([]);
+            setNewPoint({ name: '', address: '', coordinates: '', city: '' });
+          }}
+          className="btn"
+          style={{
+            flex: 1,
+            background: '#9E9E9E',
+            color: 'white',
+            padding: '12px',
+            fontSize: '16px'
+          }}
+        >
+          Отмена
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
       {/* Модальное окно удаления */}
       {showDeleteModal && (
